@@ -1,0 +1,6 @@
+{
+  "name": "CVWT Traffic Pollutant Trapping & Simulation",
+  "description": "Interactive CVWT design inspector, two-way traffic aerodynamic simulation, pollutant trapping physics, real-time data visualization, and street-level maps.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
