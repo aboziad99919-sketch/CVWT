@@ -17,7 +17,7 @@ jobs:
         working-directory: ${{ env.ROOT }}/tests
   pilot:
     needs: unit
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
@@ -28,12 +28,17 @@ jobs:
           sudo apt-get update -qq && sudo apt-get install -y openfoam12
       - name: Porous bed vs Ergun (30 s)
         run: |
+          set +e                                    # OpenFOAM's bashrc returns non-zero; -e would abort here
           source /opt/openfoam12/etc/bashrc
+          set -e
+          which blockMesh foamRun topoSet           # proves the environment really loaded
           chmod +x Allrun && ./Allrun --run
         working-directory: ${{ env.ROOT }}/tests/foam/porous_duct
       - name: Mesh and solve the pilot case
         run: |
+          set +e
           source /opt/openfoam12/etc/bashrc
+          set -e
           python3 make_sweep.py --create --only=$CASE
           cd runs/$CASE && chmod +x Allrun && ./Allrun && ./Allrun --run 4
         working-directory: ${{ env.ROOT }}/sweep
