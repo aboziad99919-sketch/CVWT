@@ -39,10 +39,11 @@ jobs:
           set +e
           source /opt/openfoam12/etc/bashrc
           set -e
+          which mpirun && mpirun --version | head -2 || echo "NO mpirun on this runner"
           python3 make_sweep.py --create --only=$CASE
           cd runs/$CASE
-          foamDictionary system/decomposeParDict -entry numberOfSubdomains -set 4   # match mpirun -np 4
-          chmod +x Allrun && ./Allrun && ./Allrun --run 4
+          foamDictionary system/controlDict -entry endTime -set 1500   # pilot: keep inside the job timeout
+          chmod +x Allrun && ./Allrun && ./Allrun --run          # serial: MPI is not needed to validate the case
         working-directory: ${{ env.ROOT }}/sweep
       - name: Summary and acceptance gates
         if: always()
