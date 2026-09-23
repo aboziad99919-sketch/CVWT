@@ -1,0 +1,57 @@
+name: cfd-stage1-pilot
+on:
+  push:
+    branches: [main]
+    paths: ['cvwt-upload-to-github/**', '.github/workflows/cfd-stage1-pilot.yml']
+  workflow_dispatch:
+env:
+  ROOT: cvwt-upload-to-github/cfd/stage1
+  CASE: M1_F2_t18_U4_az000_capped_holes_coarse
+jobs:
+  unit:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: pip install numpy scipy matplotlib
+      - run: python3 -m unittest discover -p "test_*.py" -v
+        working-directory: ${{ env.ROOT }}/tests
+  pilot:
+    needs: unit
+    runs-on: ubuntu-22.04      # OpenFOAM.org publishes packages for jammy; 24.04 may have none
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install OpenFOAM 12
+        run: |
+          set -x
+          sudo apt-get install -y software-properties-common wget
+          sudo sh -c "wget -qO - https://dl.openfoam.org/gpg.key > /etc/apt/trusted.gpg.d/openfoam.asc"
+          sudo add-apt-repository -y http://dl.openfoam.org/ubuntu
+          sudo apt-get update
+          apt-cache policy openfoam12 || true          # prints what the repo actually offers
+          sudo apt-get install -y openfoam12
+          ls /opt/openfoam12/etc/bashrc
+      - name: Porous bed vs Ergun (30 s)
+        run: |
+          source /opt/openfoam12/etc/bashrc
+          chmod +x Allrun && ./Allrun --run
+        working-directory: ${{ env.ROOT }}/tests/foam/porous_duct
+      - name: Mesh and solve the pilot case
+        run: |
+          source /opt/openfoam12/etc/bashrc
+          python3 make_sweep.py --create --only=$CASE
+          cd runs/$CASE && chmod +x Allrun && ./Allrun && ./Allrun --run 4
+        working-directory: ${{ env.ROOT }}/sweep
+      - name: Summary and acceptance gates
+        if: always()
+        run: python3 summarize_run.py runs/$CASE || true
+        working-directory: ${{ env.ROOT }}/sweep
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: stage1-pilot-${{ github.run_number }}
+          path: |
+            cvwt-upload-to-github/cfd/stage1/sweep/runs/*/log.*
+            cvwt-upload-to-github/cfd/stage1/sweep/runs/*/run_summary.json
+            cvwt-upload-to-github/cfd/stage1/sweep/runs/*/postProcessing/**
+            cvwt-upload-to-github/cfd/stage1/tests/foam/porous_duct/log.*
