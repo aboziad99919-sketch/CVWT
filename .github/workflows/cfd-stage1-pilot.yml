@@ -40,7 +40,9 @@ jobs:
           source /opt/openfoam12/etc/bashrc
           set -e
           python3 make_sweep.py --create --only=$CASE
-          cd runs/$CASE && chmod +x Allrun && ./Allrun && ./Allrun --run 4
+          cd runs/$CASE
+          foamDictionary system/decomposeParDict -entry numberOfSubdomains -set 4   # match mpirun -np 4
+          chmod +x Allrun && ./Allrun && ./Allrun --run 4
         working-directory: ${{ env.ROOT }}/sweep
       - name: Summary and acceptance gates
         if: always()
