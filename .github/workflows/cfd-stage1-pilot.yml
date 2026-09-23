@@ -1,24 +1,36 @@
-name: cfd-stage1-pilot
+# Group A screening: 16 cases, each in its own parallel job, coarse mesh, serial solver.
+# Purpose: measure the core pressure at the holes (the pre-screen's biggest unknown) and the
+# open-vs-capped bypass, before spending medium-mesh hours. Manual trigger only.
+name: cfd-stage1-groupA
 on:
-  push:
-    branches: [main]
-    paths: ['cvwt-upload-to-github/**', '.github/workflows/cfd-stage1-pilot.yml']
   workflow_dispatch:
 env:
   ROOT: cvwt-upload-to-github/cfd/stage1
-  CASE: M1_F2_t18_U4_az000_capped_holes_coarse
 jobs:
-  unit:
+  screen:
     runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v4
-      - run: pip install numpy scipy matplotlib
-      - run: python3 -m unittest discover -p "test_*.py" -v
-        working-directory: ${{ env.ROOT }}/tests
-  pilot:
-    needs: unit
-    runs-on: ubuntu-24.04
-    timeout-minutes: 120
+    timeout-minutes: 300
+    strategy:
+      fail-fast: false          # one bad case must not cancel the other fifteen
+      max-parallel: 8
+      matrix:
+        case:
+          - A1_SEALED_t18_U4_az000_capped_holes_medium
+          - A1_SEALED_t18_U4_az225_capped_holes_medium
+          - A1_SEALED_t18_U4_az450_capped_holes_medium
+          - A1_SEALED_t18_U4_az675_capped_holes_medium
+          - A2_SEALED_t18_U2_az000_capped_holes_medium
+          - A2_SEALED_t18_U4_az000_capped_holes_medium
+          - A2_SEALED_t18_U6_az000_capped_holes_medium
+          - A2_SEALED_t18_U2_az000_open_holes_medium
+          - A2_SEALED_t18_U4_az000_open_holes_medium
+          - A2_SEALED_t18_U6_az000_open_holes_medium
+          - A2_F0_t18_U2_az000_capped_holes_medium
+          - A2_F0_t18_U4_az000_capped_holes_medium
+          - A2_F0_t18_U6_az000_capped_holes_medium
+          - A2_F0_t18_U2_az000_open_holes_medium
+          - A2_F0_t18_U4_az000_open_holes_medium
+          - A2_F0_t18_U6_az000_open_holes_medium
     steps:
       - uses: actions/checkout@v4
       - name: Install OpenFOAM 12
@@ -26,35 +38,31 @@ jobs:
           sudo sh -c "wget -qO - https://dl.openfoam.org/gpg.key > /etc/apt/trusted.gpg.d/openfoam.asc"
           sudo add-apt-repository -y http://dl.openfoam.org/ubuntu
           sudo apt-get update -qq && sudo apt-get install -y openfoam12
-      - name: Porous bed vs Ergun (30 s)
-        run: |
-          set +e                                    # OpenFOAM's bashrc returns non-zero; -e would abort here
-          source /opt/openfoam12/etc/bashrc
-          set -e
-          which blockMesh foamRun topoSet           # proves the environment really loaded
-          chmod +x Allrun && ./Allrun --run
-        working-directory: ${{ env.ROOT }}/tests/foam/porous_duct
-      - name: Mesh and solve the pilot case
+      - name: Mesh and solve ${{ matrix.case }}
         run: |
           set +e
           source /opt/openfoam12/etc/bashrc
           set -e
-          which mpirun && mpirun --version | head -2 || echo "NO mpirun on this runner"
-          python3 make_sweep.py --create --only=$CASE
-          cd runs/$CASE
-          foamDictionary system/controlDict -entry endTime -set 1500   # pilot: keep inside the job timeout
-          chmod +x Allrun && ./Allrun && ./Allrun --run          # serial: MPI is not needed to validate the case
+          python3 make_sweep.py --create --only=${{ matrix.case }}
+          cd runs/${{ matrix.case }}
+          # screening mesh: drop every refinement level by one (medium -> coarse), ~0.6 M cells
+          foamDictionary system/caseParams -entry LVL   -set 4
+          foamDictionary system/caseParams -entry LVL_1 -set 3
+          foamDictionary system/caseParams -entry LVL_2 -set 2
+          foamDictionary system/caseParams -entry LVL_3 -set 1
+          foamDictionary system/controlDict -entry endTime -set 1500
+          chmod +x Allrun && ./Allrun --run
         working-directory: ${{ env.ROOT }}/sweep
       - name: Summary and acceptance gates
         if: always()
-        run: python3 summarize_run.py runs/$CASE || true
+        run: python3 summarize_run.py runs/${{ matrix.case }} || true
         working-directory: ${{ env.ROOT }}/sweep
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: stage1-pilot-${{ github.run_number }}
+          name: groupA-${{ matrix.case }}
           path: |
             cvwt-upload-to-github/cfd/stage1/sweep/runs/*/log.*
             cvwt-upload-to-github/cfd/stage1/sweep/runs/*/run_summary.json
             cvwt-upload-to-github/cfd/stage1/sweep/runs/*/postProcessing/**
-            cvwt-upload-to-github/cfd/stage1/tests/foam/porous_duct/log.*
+          retention-days: 30
