@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# CVWT stage-1 case. DRY RUN BY DEFAULT: prints every step. Execute with:  ./Allrun --run [NPROCS]
+# Requires OpenFOAM.org 12 sourced (source /opt/openfoam12/etc/bashrc).
+set -euo pipefail
+cd "$(dirname "$0")"
+RUN=0; [[ "${1:-}" == "--run" ]] && RUN=1
+NP="${2:-1}"
+MAX_CELLS="${MAX_CELLS:-8000000}"
+step() { echo "+ $*"; if [[ $RUN == 1 ]]; then name=$(echo "$1" | tr -d './'); "$@" > "log.$name" 2>&1 || { echo "FAILED: $* (see log.$name)"; exit 1; }; fi; }
+par()  { if [[ $NP -gt 1 ]]; then step mpirun -np "$NP" "$@" -parallel; else step "$@"; fi; }
+[[ -f log.foamRun ]] && { echo "log.foamRun exists - this case already ran; copy the case instead of re-running here."; exit 1; }
+
+step surfaceFeatures
+step blockMesh
+[[ $NP -gt 1 ]] && step decomposePar -copyZero
+par snappyHexMesh -overwrite
+par topoSet
+par checkMesh
+if [[ $RUN == 1 ]]; then
+  N=$(grep -m1 -E "^\s*cells:" log.checkMesh | awk '{print $2}'); echo "cells = $N"
+  (( N <= MAX_CELLS )) || { echo "REFUSED: $N cells > MAX_CELLS=$MAX_CELLS"; exit 3; }
+  grep -q "Failed [0-9]* mesh checks" log.checkMesh && echo "WARNING: checkMesh reports failed checks - review before trusting results"
+  grep -A3 "outletFilter" constant/polyMesh/boundary | grep -q "nFaces *[1-9]" || [[ $NP -gt 1 ]] || { echo "outletFilter has no faces - slots not resolved; refine slotBox"; exit 4; }
+fi
+par foamRun
+[[ $NP -gt 1 ]] && step reconstructPar -latestTime
+step foamToVTK -latestTime
+echo "done (run=$RUN)."

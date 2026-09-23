@@ -1,0 +1,17 @@
+FoamFile
+{
+    format ascii;
+    class dictionary;
+    object blockMeshDict;
+}
+
+convertToMeters 1;
+// 1-D duct, 200 x 20 x 20 mm, slip walls -> plug flow, so the only pressure drop is the porous bed
+vertices ((0 0 0) (0.2 0 0) (0.2 0.02 0) (0 0.02 0) (0 0 0.02) (0.2 0 0.02) (0.2 0.02 0.02) (0 0.02 0.02));
+blocks (hex (0 1 2 3 4 5 6 7) (200 8 8) simpleGrading (1 1 1));
+boundary
+(
+    inlet  { type patch; faces ((0 4 7 3)); }
+    outlet { type patch; faces ((1 2 6 5)); }
+    walls  { type patch; faces ((0 3 2 1) (4 5 6 7) (0 1 5 4) (3 7 6 2)); }
+);

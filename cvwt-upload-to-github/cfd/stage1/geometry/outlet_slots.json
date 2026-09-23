@@ -1,0 +1,32 @@
+{
+  "shape": "parallel rectangular slots along x (lane direction) - PLACEHOLDER dimensions",
+  "n_slots": 3,
+  "width_mm": 6.0,
+  "rib_mm": 2.0,
+  "slots_mm_x0x1y0y1": [
+    [
+      -15.72,
+      15.72,
+      -3.0,
+      3.0
+    ],
+    [
+      -11.62,
+      11.62,
+      5.0,
+      11.0
+    ],
+    [
+      -11.62,
+      11.62,
+      -11.0,
+      -5.0
+    ]
+  ],
+  "open_area_mm2": 467.4,
+  "fraction_of_d34_placeholder": 0.515,
+  "passage_length_mm": 30,
+  "passage": "housing floor 5 + mount plates 5 + 10 + median plate 10 mm",
+  "hydraulic_diameter_mm": 9.72,
+  "exit": "domain bottom z = -25 mm (underside of median plate) -> patch outletFilter, total pressure 0 (still room air)"
+}

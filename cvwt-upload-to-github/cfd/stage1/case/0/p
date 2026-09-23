@@ -1,0 +1,19 @@
+FoamFile
+{
+    format      ascii;
+    class       volScalarField;
+    object      p;
+}
+
+dimensions      [0 2 -2 0 0 0 0];
+internalField   uniform 0;
+boundaryField
+{
+    #includeEtc "caseDicts/setConstraintTypes"
+    inlet        { type zeroGradient; }
+    outlet       { type fixedValue; value uniform 0; }
+    outletFilter { type totalPressure; p0 uniform 0; value uniform 0; }   // slot exits below the median plate: still room air (user decision 2026-09-22)
+    deck         { type slip; }
+    "(top|sides)" { type slip; }
+    cvwtWalls    { type zeroGradient; }
+}

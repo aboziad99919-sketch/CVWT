@@ -1,0 +1,10 @@
+{
+  "type": "cylinder",
+  "axis": "z",
+  "radius_m": 0.017,
+  "z0_m": 0.027,
+  "z1_m": 0.045,
+  "thickness_m": 0.018,
+  "face_area_m2": 0.0009079202768874504,
+  "note": "Measured from the solid placeholder (STL component \u00d834 x 18 mm). Meshed as FLUID + porous cellZone."
+}

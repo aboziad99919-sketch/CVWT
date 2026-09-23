@@ -1,0 +1,6 @@
+id,assumed media,d_p_mm,porosity,Darcy_d_1/m2,Forchheimer_f_1/m,thicknesses_mm,status
+F0,empty housing (no media),0.0,,0,0,-,ASSUMED - replace with measured Δp(V) of the actual biochar
+F1,coarse granules d_p=4 mm,4.0,0.45,3.112e+07,5281,9/18/36,ASSUMED - replace with measured Δp(V) of the actual biochar
+F2,medium granules d_p=2 mm,2.0,0.45,1.245e+08,1.056e+04,9/18/36,ASSUMED - replace with measured Δp(V) of the actual biochar
+F3,fine granules d_p=1 mm,1.0,0.45,4.979e+08,2.112e+04,9/18/36,ASSUMED - replace with measured Δp(V) of the actual biochar
+F4,"very fine d_p=0.5 mm, ε=0.40",0.5,0.4,3.375e+09,6.562e+04,9/18/36,ASSUMED - replace with measured Δp(V) of the actual biochar

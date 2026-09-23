@@ -1,0 +1,52 @@
+/*  CVWT stage-1 | OpenFOAM.org 12 (foamRun -solver incompressibleFluid) | generated template  */
+FoamFile
+{
+    format      ascii;
+    class       dictionary;
+    object      controlDict;
+}
+
+#include "caseParams"
+application     foamRun;
+solver          incompressibleFluid;
+startFrom       latestTime;
+startTime       0;
+stopAt          endTime;
+endTime         3000;
+deltaT          1;
+writeControl    timeStep;
+writeInterval   500;
+purgeWrite      2;
+writeFormat     binary;
+writePrecision  8;
+timeFormat      general;
+runTimeModifiable true;
+
+functions
+{
+    #includeFunc residuals(p, U, k, omega)
+    #includeFunc patchFlowRate(patch=outletFilter, name=Q_outletFilter)
+    #includeFunc patchFlowRate(patch=inlet,        name=Q_inlet)
+    #includeFunc patchFlowRate(patch=outlet,       name=Q_outlet)
+    #includeFunc forcesIncompressible(patches=(rotorGroup), rhoInf=1.2, CofR=(0 0 0), pitchAxis=(0 0 1), name=rotorForces)
+    #includeFunc yPlus
+    probes
+    {
+        type            probes;
+        libs            ("libsampling.so");
+        writeControl    timeStep;
+        writeInterval   10;
+        fields          (p U);
+        probeLocations
+        (
+            (0 0 0.20)      // bore, hole band
+            (0 0 0.30)      // bore, just below top opening
+            (0 0 0.060)     // housing plenum above bed (tube exit z=0.058)
+            (0 0 0.0465)    // bed top face (+1.5 mm)
+            (0 0 0.007)     // below bed, above housing floor (valid for all bed thicknesses)
+            (0 0 -0.020)    // inside centre outlet slot (median-plate level)
+            (0 0 0.020)     // below bed for t <= 18 mm
+            (-0.3 0 0.2)    // upstream freestream reference
+        );
+    }
+}

@@ -1,0 +1,10 @@
+/*  CVWT stage-1 | OpenFOAM.org 12 (foamRun -solver incompressibleFluid) | generated template  */
+FoamFile
+{
+    format      ascii;
+    class       dictionary;
+    object      decomposeParDict;
+}
+
+numberOfSubdomains @@NPROCS@@;
+method scotch;

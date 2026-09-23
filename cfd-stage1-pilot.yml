@@ -1,0 +1,65 @@
+# Stage-1 pilot: coarse-mesh CVWT case (capped top, 2 mm biochar bed, 18 mm, 4 m/s) on a GitHub runner.
+# Runs on push to this branch and on manual dispatch. ~30-45 min, 4 cores, no cost beyond Actions minutes.
+name: cfd-stage1-pilot
+on:
+  push:
+    branches: [main, cfd-stage1-pilot]
+    paths: ['cfd/**', '.github/workflows/cfd-stage1-pilot.yml']
+  workflow_dispatch:
+    inputs:
+      case:
+        description: case_id from sweep/sweep_matrix.csv
+        default: M1_F2_t18_U4_az000_capped_holes_coarse
+jobs:
+  unit:                     # seconds, no OpenFOAM: geometry, pre-screen, case generation, log parsers
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: pip install numpy scipy matplotlib
+      - name: Unit tests
+        working-directory: cfd/stage1/tests
+        run: python3 -m unittest discover -p "test_*.py" -v
+
+  pilot:
+    needs: unit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      CASE: ${{ github.event.inputs.case || 'M1_F2_t18_U4_az000_capped_holes_coarse' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install OpenFOAM.org 12
+        run: |
+          sudo sh -c "wget -qO - https://dl.openfoam.org/gpg.key > /etc/apt/trusted.gpg.d/openfoam.asc"
+          sudo add-apt-repository -y http://dl.openfoam.org/ubuntu
+          sudo apt-get update -qq && sudo apt-get install -y openfoam12
+      - name: Verify the porous-bed model against Ergun (30 s)
+        working-directory: cfd/stage1/tests/foam/porous_duct
+        run: |
+          source /opt/openfoam12/etc/bashrc
+          ./Allrun --run
+      - name: Create the case (never overwrites)
+        working-directory: cfd/stage1/sweep
+        run: python3 make_sweep.py --create --only=$CASE
+      - name: Mesh + solve
+        working-directory: cfd/stage1/sweep
+        run: |
+          source /opt/openfoam12/etc/bashrc
+          cd runs/$CASE
+          ./Allrun            # dry run: prints the plan into the log
+          ./Allrun --run 4    # 4 cores on the GitHub runner
+      - name: Summarise + acceptance gates
+        if: always()
+        working-directory: cfd/stage1/sweep
+        run: python3 summarize_run.py runs/$CASE || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: stage1-pilot-${{ github.run_number }}
+          path: |
+            cfd/stage1/sweep/runs/*/log.*
+            cfd/stage1/sweep/runs/*/run_summary.json
+            cfd/stage1/sweep/runs/*/postProcessing/**
+            cfd/stage1/sweep/runs/*/VTK/**
+            cfd/stage1/tests/foam/porous_duct/log.*
+          retention-days: 14

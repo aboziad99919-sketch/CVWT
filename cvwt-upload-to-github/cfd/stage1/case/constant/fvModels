@@ -1,0 +1,23 @@
+/*  CVWT stage-1 | OpenFOAM.org 12 (foamRun -solver incompressibleFluid) | generated template  */
+FoamFile
+{
+    format      ascii;
+    class       dictionary;
+    object      fvModels;
+}
+
+#include "$FOAM_CASE/system/caseParams"
+// Biochar bed as isotropic Darcy-Forchheimer medium. Coefficients are CANDIDATE ASSUMPTIONS (Ergun),
+// not measured properties. Replace with a fit to measured Δp(V) of the actual media before any claim.
+biocharBed
+{
+    type            porosityForce;
+    porosityForceCoeffs
+    {
+        cellZone        filter;
+        type            DarcyForchheimer;
+        d   ($D_COEFF $D_COEFF $D_COEFF);
+        f   ($F_COEFF $F_COEFF $F_COEFF);
+        coordinateSystem filterAxes;
+    }
+}

@@ -1,0 +1,12 @@
+FoamFile
+{
+    format ascii;
+    class dictionary;
+    object topoSetDict;
+}
+
+actions
+(
+    { name bedCells; type cellSet; action new; source boxToCell; box (0.091 -1 -1) (0.109 1 1); }   // 18 mm bed
+    { name filter; type cellZoneSet; action new; source setToCellZone; set bedCells; }
+);

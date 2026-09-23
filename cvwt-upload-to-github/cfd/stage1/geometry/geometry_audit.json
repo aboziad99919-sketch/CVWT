@@ -1,0 +1,89 @@
+{
+  "source_files": {
+    "demo-project-with cars.stl": "65,726 tris, ASCII, 37 bodies: 1 CVWT + 2 cars + rig",
+    "demo-project.ply": "161,066 tris, ASCII (zoo.dev), 79 bodies: 3 CVWTs at x = -650/0/+650 mm + 4 vehicles (2 per lane, incl. a larger 402 mm body)"
+  },
+  "units_and_frame": "millimetres; z up; x along lanes; origin on the CVWT axis at base-dish bottom (z=0); road/belt top z = -15 mm",
+  "scale_check_vs_locked_interpretation": {
+    "rig_LxWxH_mm": [
+      2520,
+      740,
+      830
+    ],
+    "rig_drawing_mm": [
+      2520,
+      740,
+      830
+    ],
+    "match": true,
+    "cvwt_total_height_mm": 306.7,
+    "locked_1to12_height_mm": 306.7,
+    "rotor_diameter_mm": 112.0,
+    "full_scale_equiv_m": 4.33,
+    "drawing_1to2_cm": 66,
+    "drawing_full_scale_m": 1.8,
+    "diff_pct": 1.8,
+    "base_dish_diameter_mm": 150.0,
+    "model_full_scale_m": 1.8,
+    "median_plate_width_mm": 110.0,
+    "note": "rotor \u00d8112 mm vs 110 mm median plate: rotor overhangs the median by ~1 mm per side",
+    "car_length_mm": 361
+  },
+  "cvwt_parts": {
+    "fins": "4 helical fins (passive rotor), r 13.9-56.0 mm, z 75-306.7 mm (231.7 mm span), ~0.75 deg/mm twist (~175 deg total); each closed, manifold",
+    "hollow_cylinder": "OD 24 / ID 20 mm, z 58-306.7 mm, genus 36 -> ~35 radial holes, total open area ~718 mm^2 (mean ~5 mm dia); bore OPEN at the top (caps are rings)",
+    "caps": "2 rings OD 30 mm, 4 mm thick at z 72-76 and 302.7-306.7 (rotor end plates)",
+    "housing": "base dish \u00d8150 x 5 mm + housing tube ID 34 / OD 38 mm, z 5-72, annular lid ID 24 at z 70-72",
+    "filter_placeholder": "solid cylinder \u00d834 x 18 mm at z 27-45 (fills the housing bore)",
+    "mount_plates": "170x170x5 and 170x110x10 mm solid blocks under the dish (z -15..0)"
+  },
+  "flow_path_check": [
+    {
+      "id": "G1",
+      "severity": "RESOLVED (placeholder)",
+      "finding": "No downward outlet exists: housing floor (z 0-5) and both mount plates are solid on the axis (ray-cast confirmed). The drawn path ends in a dead end.",
+      "cfd_treatment": "cvwt_base_stack.stl (build_outlet.py, parametric W/RIB); domain bottom z=-25 mm = patch outletFilter, total pressure 0.",
+      "decision_2026-09-22": "User: outlet = slots through the base-dish floor, both mount plates and the median plate, venting to still room air. Slot dimensions not yet specified -> placeholder 3 x 6 mm slots (467 mm2, 51 % of the accepted \u00d834 placeholder area)."
+    },
+    {
+      "id": "G2",
+      "severity": "HIGH",
+      "finding": "Top of the hollow cylinder is open (bore reachable from above the rotor, z = 306.7). This is a second inlet/outlet in parallel with the holes and can bypass the filter.",
+      "cfd_treatment": "Both variants in the sweep: 'topOpen' (as modelled) and 'topCapped'. Confirm the design intent."
+    },
+    {
+      "id": "G3",
+      "severity": "MEDIUM",
+      "finding": "Filter is a solid placeholder; 18 mm bed thickness and \u00d834 face are the only known filter data.",
+      "cfd_treatment": "Meshed as fluid + porous cellZone (Darcy-Forchheimer) with labelled candidate resistances."
+    },
+    {
+      "id": "G4",
+      "severity": "MEDIUM",
+      "finding": "Stationary tube sits inside rotating fins with 1.9 mm radial clearance (r 12 -> 13.9 mm).",
+      "cfd_treatment": "Stage 1 = frozen rotor at 4 azimuths; stage 2 needs an AMI/MRF interface inside that gap -> resolve with >= 4 cells across."
+    },
+    {
+      "id": "G5",
+      "severity": "LOW (stage 1)",
+      "finding": "Wheels (512 non-manifold edges each), belts (70) and enclosure (30) are not watertight solids; enclosure ends are open.",
+      "cfd_treatment": "Not used in stage 1. Before the moving-vehicle stage: replace wheels with simple cylinders, repair/merge enclosure in CAD."
+    }
+  ],
+  "cfd_inputs": {
+    "hole_open_area_m2": 0.000718,
+    "hole_count_est": 35,
+    "bore_diameter_m": 0.02,
+    "bore_area_m2": 0.0003141592653589793,
+    "bore_length_hole_centroid_to_exit_m": 0.122,
+    "filter_face_area_m2": 0.0009079202768874504,
+    "filter_thickness_as_drawn_m": 0.018,
+    "outlet_area_m2": 0.0004674,
+    "rotor_diameter_m": 0.112,
+    "rotor_span_m": 0.2317,
+    "rotor_frontal_area_m2": 0.0259504,
+    "outlet_passage_length_m": 0.03,
+    "outlet_hydraulic_diameter_m": 0.009720000000000001,
+    "outlet_placeholder_d34_area_m2": 0.0009079
+  }
+}

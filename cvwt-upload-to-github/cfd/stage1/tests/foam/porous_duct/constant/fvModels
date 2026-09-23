@@ -1,0 +1,20 @@
+FoamFile
+{
+    format ascii;
+    class dictionary;
+    object fvModels;
+}
+
+// F2 candidate: d_p = 2 mm, eps = 0.45 -> Ergun d = 1.245e8 1/m2, f = 1.0563e4 1/m
+biocharBed
+{
+    type            porosityForce;
+    porosityForceCoeffs
+    {
+        cellZone        filter;
+        type            DarcyForchheimer;
+        d   (1.245e8 1.245e8 1.245e8);
+        f   (1.0563e4 1.0563e4 1.0563e4);
+        coordinateSystem filterAxes;
+    }
+}

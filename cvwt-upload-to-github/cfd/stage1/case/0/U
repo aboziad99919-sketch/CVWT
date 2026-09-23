@@ -1,0 +1,20 @@
+FoamFile
+{
+    format      ascii;
+    class       volVectorField;
+    object      U;
+}
+
+#include "$FOAM_CASE/system/caseParams"
+dimensions      [0 1 -1 0 0 0 0];
+internalField   uniform ($U_IN 0 0);
+boundaryField
+{
+    #includeEtc "caseDicts/setConstraintTypes"
+    inlet        { type fixedValue; value $internalField; }
+    outlet       { type inletOutlet; inletValue uniform (0 0 0); value $internalField; }
+    outletFilter { type pressureInletOutletVelocity; value uniform (0 0 0); }
+    deck         { type slip; }                          // road/median top: no floor boundary layer (component test)
+    "(top|sides)" { type slip; }
+    cvwtWalls    { type noSlip; }
+}

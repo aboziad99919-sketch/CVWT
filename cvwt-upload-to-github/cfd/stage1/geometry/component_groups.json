@@ -1,0 +1,65 @@
+{
+ "cvwt_fins": [
+  18,
+  19,
+  20,
+  21
+ ],
+ "cvwt_tube": [
+  25
+ ],
+ "cvwt_caps": [
+  23,
+  24
+ ],
+ "cvwt_housing_original": [
+  17
+ ],
+ "cvwt_filter_original": [
+  22
+ ],
+ "cvwt_mount_plates": [
+  15,
+  16
+ ],
+ "rig_enclosure": [
+  0
+ ],
+ "rig_median_plate": [
+  2
+ ],
+ "rig_belts": [
+  3,
+  4
+ ],
+ "rig_end_bars": [
+  1,
+  36
+ ],
+ "vehicles_body": [
+  5,
+  10,
+  26,
+  31
+ ],
+ "vehicles_wheels": [
+  8,
+  9,
+  11,
+  12,
+  29,
+  30,
+  32,
+  33
+ ],
+ "vehicles_details": [
+  6,
+  7,
+  13,
+  14,
+  27,
+  28,
+  34,
+  35
+ ]
+}

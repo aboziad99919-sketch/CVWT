@@ -1,0 +1,23 @@
+/*  CVWT stage-1 | OpenFOAM.org 12 (foamRun -solver incompressibleFluid) | generated template  */
+FoamFile
+{
+    format      ascii;
+    class       dictionary;
+    object      fvSolution;
+}
+
+solvers
+{
+    p     { solver GAMG; smoother GaussSeidel; tolerance 1e-7; relTol 0.01; }
+    Phi   { $p; }
+    "(U|k|omega)" { solver smoothSolver; smoother GaussSeidel; tolerance 1e-8; relTol 0.1; nSweeps 1; }
+}
+SIMPLE
+{
+    nNonOrthogonalCorrectors 1;
+    consistent      yes;
+    residualControl { p 1e-5; U 1e-6; "(k|omega)" 1e-6; }
+}
+potentialFlow { nNonOrthogonalCorrectors 10; }
+relaxationFactors { equations { U 0.7; k 0.5; omega 0.5; } fields { p 1; } }
+cache { grad(U); }

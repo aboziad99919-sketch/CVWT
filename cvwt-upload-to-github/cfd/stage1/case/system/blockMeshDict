@@ -1,0 +1,21 @@
+/*  CVWT stage-1 | OpenFOAM.org 12 (foamRun -solver incompressibleFluid) | generated template  */
+FoamFile
+{
+    format      ascii;
+    class       dictionary;
+    object      blockMeshDict;
+}
+
+convertToMeters 1;
+// x along flow, y cross, z up; z=0 base-dish bottom; deck/median top z=-0.015; domain bottom z=-0.025 = underside of median plate
+vertices ( (-0.6 -0.5 -0.025) (1.4 -0.5 -0.025) (1.4 0.5 -0.025) (-0.6 0.5 -0.025)
+           (-0.6 -0.5 0.6) (1.4 -0.5 0.6) (1.4 0.5 0.6) (-0.6 0.5 0.6) );
+blocks ( hex (0 1 2 3 4 5 6 7) (100 50 31) simpleGrading (1 1 1) );   // 20 mm base cells
+boundary
+(
+    inlet   { type patch; faces ((0 4 7 3)); }
+    outlet  { type patch; faces ((1 2 6 5)); }
+    outletFilter { type patch; faces ((0 3 2 1)); }   // only the slot exits survive: the deck slab fills the rest
+    top     { type patch; faces ((4 5 6 7)); }
+    sides   { type patch; faces ((0 1 5 4) (3 7 6 2)); }
+);

@@ -1,0 +1,10 @@
+/*  CVWT stage-1 | OpenFOAM.org 12 (foamRun -solver incompressibleFluid) | generated template  */
+FoamFile
+{
+    format      ascii;
+    class       dictionary;
+    object      physicalProperties;
+}
+
+viscosityModel  constant;
+nu              [0 2 -1 0 0 0 0] 1.51e-05;   // air 20 C

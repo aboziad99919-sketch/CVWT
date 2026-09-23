@@ -1,0 +1,14 @@
+
+== U=4 m/s, Cp_h=0.3, t=18 mm, top capped
+F0  Qf=  34.91 L/min  Vf=0.641 m/s  dp_f=  0.00 Pa  Qtop=   0.00  Re_p=0  t_res=28 ms
+F1  Qf=   7.93 L/min  Vf=0.146 m/s  dp_f=  2.69 Pa  Qtop=   0.00  Re_p=39  t_res=56 ms
+F2  Qf=   3.25 L/min  Vf=0.060 m/s  dp_f=  2.83 Pa  Qtop=   0.00  Re_p=8  t_res=136 ms
+F3  Qf=   0.94 L/min  Vf=0.017 m/s  dp_f=  2.87 Pa  Qtop=   0.00  Re_p=1  t_res=469 ms
+F4  Qf=   0.14 L/min  Vf=0.003 m/s  dp_f=  2.88 Pa  Qtop=   0.00  Re_p=0  t_res=2755 ms
+
+== U=4 m/s, Cp_h=0.3, t=18 mm, top open, Cp=-0.6
+F0  Qf=   7.82 L/min  Vf=0.143 m/s  dp_f=  0.00 Pa  Qtop= -48.25  Re_p=0  t_res=125 ms
+F1  Qf=   2.18 L/min  Vf=0.040 m/s  dp_f=  0.50 Pa  Qtop= -49.80  Re_p=11  t_res=203 ms
+F2  Qf=   0.78 L/min  Vf=0.014 m/s  dp_f=  0.61 Pa  Qtop= -50.16  Re_p=2  t_res=564 ms
+F3  Qf=   0.22 L/min  Vf=0.004 m/s  dp_f=  0.65 Pa  Qtop= -50.31  Re_p=0  t_res=2035 ms
+F4  Qf=   0.03 L/min  Vf=0.001 m/s  dp_f=  0.66 Pa  Qtop= -50.36  Re_p=0  t_res=11942 ms

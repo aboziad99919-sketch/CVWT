@@ -1,0 +1,89 @@
+/*  CVWT stage-1 | OpenFOAM.org 12 (foamRun -solver incompressibleFluid) | generated template  */
+FoamFile
+{
+    format      ascii;
+    class       dictionary;
+    object      snappyHexMeshDict;
+}
+
+#include "caseParams"
+castellatedMesh true;
+snap            true;
+addLayers       false;      // stage-1 pilot: wall functions; enable layers after the y+ check (mesh-quality skill)
+
+geometry
+{
+    fins     { type triSurfaceMesh; file "cvwt_fins.stl"; }
+    tube     { type triSurfaceMesh; file "cvwt_tube.stl"; }
+    caps     { type triSurfaceMesh; file "cvwt_caps.stl"; }
+    housing  { type triSurfaceMesh; file "cvwt_housing_cfd.stl"; }
+    topcap   { type triSurfaceMesh; file "cvwt_topcap.stl"; }      // removed by make_sweep for topOpen cases
+    base     { type triSurfaceMesh; file "cvwt_base_stack.stl"; }  // dish floor + mount plates + median/deck slab with outlet slots
+    coreZone  { type searchableCylinder; point1 (0 0 0); point2 (0 0 0.312); radius 0.021; }
+    rotorBox  { type searchableBox; min (-0.07 -0.07 0); max (0.07 0.07 0.325); }
+    wakeBox   { type searchableBox; min (-0.15 -0.12 0); max (0.60 0.12 0.36); }
+}
+
+castellatedMeshControls
+{
+    maxLocalCells   2000000;
+    maxGlobalCells  12000000;
+    minRefinementCells 10;
+    maxLoadUnbalance 0.10;
+    nCellsBetweenLevels 3;
+    features
+    (
+        { file "cvwt_fins.eMesh";    level $LVL; }
+        { file "cvwt_tube.eMesh";    level $LVL; }   // hole rims: >= 8 cells across a 5 mm hole at level 5 (0.625 mm)
+        { file "cvwt_caps.eMesh";    level $LVL_1; }
+        { file "cvwt_housing_cfd.eMesh"; level $LVL_1; }
+        { file "cvwt_topcap.eMesh";  level $LVL_1; }
+        { file "cvwt_base_stack.eMesh"; level $LVL_1; }
+    );
+    refinementSurfaces
+    {
+        fins    { level ($LVL $LVL); patchInfo { type wall; inGroups (rotorGroup cvwtWalls); } }
+        tube    { level ($LVL $LVL); patchInfo { type wall; inGroups (coreGroup cvwtWalls); } }
+        caps    { level ($LVL_1 $LVL); patchInfo { type wall; inGroups (rotorGroup cvwtWalls); } }
+        housing { level ($LVL_1 $LVL_1); patchInfo { type wall; inGroups (coreGroup cvwtWalls); } }
+        topcap  { level ($LVL $LVL); patchInfo { type wall; inGroups (coreGroup cvwtWalls); } }
+        base
+        {
+            level ($LVL_3 $LVL_3);
+            regions
+            {
+                walls   { level ($LVL_1 $LVL); patchInfo { type wall; inGroups (outletGroup cvwtWalls); } }
+                deckTop { level ($LVL_3 $LVL_3); patchInfo { type wall; inGroups (deck); } }
+            }
+        }
+    }
+    resolveFeatureAngle 30;
+    refinementRegions
+    {
+        coreZone { mode inside; level $LVL; }                 // bore, housing plenum, filter bed
+        rotorBox { mode inside; level $LVL_2; }
+        wakeBox  { mode inside; level $LVL_3; }
+        slotBox  { mode inside; level $LVL; }                 // 6 mm slots: ~10 cells across at level 5
+    }
+    insidePoint (1.2 0.4 0.5);                               // external air; connects to the core via holes
+    allowFreeStandingZoneFaces true;
+}
+
+snapControls
+{
+    nSmoothPatch 3; tolerance 2.0; nSolveIter 50; nRelaxIter 5;
+    nFeatureSnapIter 10; implicitFeatureSnap false; explicitFeatureSnap true; multiRegionFeatureSnap false;
+}
+
+addLayersControls
+{
+    relativeSizes true;
+    layers { "(fins|tube|housing).*" { nSurfaceLayers 3; } }
+    expansionRatio 1.2; finalLayerThickness 0.4; minThickness 0.1; nGrow 0; featureAngle 100;
+    slipFeatureAngle 30; nRelaxIter 3; nSmoothSurfaceNormals 1; nSmoothNormals 3; nSmoothThickness 10;
+    maxFaceThicknessRatio 0.5; maxThicknessToMedialRatio 0.3; minMedianAxisAngle 90; nBufferCellsNoExtrude 0; nLayerIter 50;
+}
+
+meshQualityControls { #includeEtc "caseDicts/mesh/generation/meshQualityDict" minFaceWeight 0.02; }
+writeFlags (scalarLevels);
+mergeTolerance 1e-6;

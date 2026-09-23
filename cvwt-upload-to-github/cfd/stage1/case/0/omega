@@ -1,0 +1,19 @@
+FoamFile
+{
+    format      ascii;
+    class       volScalarField;
+    object      omega;
+}
+
+#include "$FOAM_CASE/system/caseParams"
+dimensions      [0 0 -1 0 0 0 0];
+internalField   uniform $OMEGA_IN;
+boundaryField
+{
+    #includeEtc "caseDicts/setConstraintTypes"
+    inlet        { type fixedValue; value $internalField; }
+    "(outlet|outletFilter)" { type inletOutlet; inletValue $internalField; value $internalField; }
+    deck         { type slip; }
+    "(top|sides)" { type slip; }
+    cvwtWalls    { type omegaWallFunction; value $internalField; }
+}

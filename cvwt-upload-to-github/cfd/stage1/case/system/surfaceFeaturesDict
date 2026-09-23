@@ -1,0 +1,11 @@
+/*  CVWT stage-1 | OpenFOAM.org 12 (foamRun -solver incompressibleFluid) | generated template  */
+FoamFile
+{
+    format      ascii;
+    class       dictionary;
+    object      surfaceFeaturesDict;
+}
+
+surfaces ("cvwt_fins.stl" "cvwt_tube.stl" "cvwt_caps.stl" "cvwt_housing_cfd.stl" "cvwt_topcap.stl" "cvwt_base_stack.stl");
+includedAngle   150;
+subsetFeatures { nonManifoldEdges no; openEdges yes; }

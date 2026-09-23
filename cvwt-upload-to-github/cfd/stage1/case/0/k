@@ -1,0 +1,19 @@
+FoamFile
+{
+    format      ascii;
+    class       volScalarField;
+    object      k;
+}
+
+#include "$FOAM_CASE/system/caseParams"
+dimensions      [0 2 -2 0 0 0 0];
+internalField   uniform $K_IN;
+boundaryField
+{
+    #includeEtc "caseDicts/setConstraintTypes"
+    inlet        { type fixedValue; value $internalField; }
+    "(outlet|outletFilter)" { type inletOutlet; inletValue $internalField; value $internalField; }
+    deck         { type slip; }
+    "(top|sides)" { type slip; }
+    cvwtWalls    { type kqRWallFunction; value $internalField; }
+}

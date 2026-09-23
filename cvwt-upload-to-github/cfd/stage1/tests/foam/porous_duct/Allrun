@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Porous-bed verification: 1-D duct, plug flow, one porous zone. ~30 s. Checks the OpenFOAM porosity
+# model against the Ergun pressure drop the pre-screen and the sweep assume. Run: ./Allrun --run
+set -euo pipefail; cd "$(dirname "$0")"
+RUN=0; [[ "${1:-}" == "--run" ]] && RUN=1
+for c in blockMesh topoSet foamRun; do echo "+ $c"; [[ $RUN == 1 ]] && $c > log.$c 2>&1 || true; done
+[[ $RUN == 1 ]] && python3 verify.py || echo "(dry run)"
