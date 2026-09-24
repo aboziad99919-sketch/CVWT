@@ -77,14 +77,18 @@ def create(case):
     k, om = k_omega(case["U_mps"]); L = LEVELS[case["mesh"]]
     subs = {"U_IN": case["U_mps"], "K_IN": f"{k:.6g}", "OMEGA_IN": f"{om:.6g}", "D_COEFF": f"{d:.6g}", "F_COEFF": f"{f:.6g}",
             "FILTER_Z0": f"{0.045 - case['thickness_mm']/1000:.4f}", "FILTER_ID": case["filter"],
-            "LVL": L, "LVL_1": L - 1, "LVL_2": L - 2, "LVL_3": L - 3, "NPROCS": 8}
+            "LVL": L, "LVL_1": L - 1, "LVL_2": L - 2, "LVL_3": L - 3, "NPROCS": 4}
     for p in dst.rglob("*"):
         if p.is_file() and p.suffix != ".stl":
             t = p.read_text()
             for key, v in subs.items(): t = t.replace(f"@@{key}@@", str(v))
-            if case["top"] == "open" and p.name in ("snappyHexMeshDict", "surfaceFeaturesDict"):
-                t = "\n".join(l for l in t.splitlines() if "topcap" not in l.lower()) + "\n"
-                t = t.replace(' "cvwt_topcap.stl"', "")
+            if case["top"] == "open":
+                # surfaceFeaturesDict lists every surface on ONE line: drop only the topcap token,
+                # never the whole line (doing so deletes all surfaces and snappy then has no eMesh).
+                if p.name == "surfaceFeaturesDict":
+                    t = t.replace(' "cvwt_topcap.stl"', "")
+                elif p.name == "snappyHexMeshDict":   # here each topcap reference is on its own line
+                    t = "\n".join(l for l in t.splitlines() if "topcap" not in l.lower()) + "\n"
             left = re.findall(r"@@\w+@@", t)
             assert not left, f"unresolved {left} in {p}"
             p.write_text(t)
