@@ -1,0 +1,77 @@
+# Aggregate finished cases from one or more earlier workflow runs into a single table.
+# Downloads their artifacts with the run's own token (no zips to download by hand),
+# flattens them into runs/<case>/run_summary.json and runs sweep/collect_results.py.
+# Manual trigger only. Takes about a minute.
+name: cfd-stage1-collect
+on:
+  workflow_dispatch:
+    inputs:
+      run_ids:
+        description: "Run IDs to collect, comma or space separated (the number in the run's URL)"
+        required: true
+        type: string
+env:
+  ROOT: cvwt-upload-to-github/cfd/stage1
+jobs:
+  collect:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download artifacts from the named runs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_IDS: ${{ inputs.run_ids }}
+        run: |
+          set -e
+          mkdir -p dl
+          for rid in $(echo "$RUN_IDS" | tr ',' ' '); do
+            echo "::group::run $rid"
+            gh run download "$rid" -R "$GITHUB_REPOSITORY" -D "dl/$rid" || echo "no artifacts on run $rid"
+            echo "::endgroup::"
+          done
+          # Artifacts keep the layout <artifact-name>/<case>/run_summary.json; flatten to runs/<case>/.
+          mkdir -p runs
+          n=0
+          while IFS= read -r f; do
+            case_dir=$(basename "$(dirname "$f")")
+            mkdir -p "runs/$case_dir"
+            cp "$f" "runs/$case_dir/run_summary.json"
+            n=$((n+1))
+          done < <(find dl -name run_summary.json)
+          echo "collected $n run_summary.json file(s)"
+          test "$n" -gt 0
+
+      - name: Aggregate
+        run: |
+          set -e
+          CR="$ROOT/sweep/collect_results.py"
+          if [ ! -f "$CR" ]; then
+            CR=$(find . -name collect_results.py -not -path "./dl/*" | head -1)
+          fi
+          test -n "$CR" || { echo "collect_results.py is not in the repo (expected $ROOT/sweep/)"; exit 1; }
+          echo "using $CR"
+          python3 "$CR" runs stage1 | tee collect.txt
+
+      - name: Put the table in the run summary
+        if: always()
+        run: |
+          {
+            echo '## Stage 1 collected results'
+            echo '```'
+            cat collect.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: stage1-results
+          path: |
+            stage1_results.csv
+            collect.txt
+            runs/*/run_summary.json
+          retention-days: 90
