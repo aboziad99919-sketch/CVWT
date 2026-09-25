@@ -1,0 +1,73 @@
+# Group D: the two questions groups A and B raised, measured instead of modelled.
+#
+# What A and B established. The bore Cp is NOT the head available to the bed: the perforated
+# core is cross-connected, so circulation through the hole band sets the bore pressure largely
+# independently of the filter flow. The head the bed actually sees is dp_bed, which tends to
+# 1.62 Pa at 4 m/s as the bed is made more restrictive (F3/36 mm reaches 96% of it). With the
+# head capped, the only lever left is face velocity, i.e. bed area.
+#
+# D1  external Cp rake, sealed core. controlDict now carries probes up the outside of the CVWT
+#     at r = 45 and 70 mm. An elevated intake is only usable where Cp is still near ambient;
+#     inside the rotor's suction field there is no head left to drive the bed.
+# D2  bed area: bore Ø34 (as drawn) / Ø48 / Ø68 at F2, 18 mm, with the slots widened in step
+#     (3 / 5 / 7 slots, 467 / 1070 / 2244 mm2) so they do not become the new throttle.
+# D3  Ø68 bore with the AS-DRAWN slots, which separates the bed-area gain from the slot
+#     restriction. D2's widest case and D3 differ only in the slot plate.
+#
+# A lumped network model was fitted to the nine group-B cases and missed them by 66% once the
+# corrected Cp was used, so its projections were withdrawn. These five runs replace them.
+# 5 cases, all in parallel, coarse mesh, serial solver. Manual trigger only.
+name: cfd-stage1-groupD
+on:
+  workflow_dispatch:
+env:
+  ROOT: cvwt-upload-to-github/cfd/stage1
+jobs:
+  screen:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+    strategy:
+      fail-fast: false          # one bad case must not cancel the other fifteen
+      max-parallel: 8
+      matrix:
+        case:
+          - D1_SEALED_t18_U4_az000_capped_holes_medium
+          - D2_F2_t18_U4_az000_capped_holes_medium
+          - D2_F2_t18_U4_az000_capped_holes_medium_b24s23
+          - D2_F2_t18_U4_az000_capped_holes_medium_b34s33
+          - D3_F2_t18_U4_az000_capped_holes_medium_b34s16
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install OpenFOAM 12
+        run: |
+          sudo sh -c "wget -qO - https://dl.openfoam.org/gpg.key > /etc/apt/trusted.gpg.d/openfoam.asc"
+          sudo add-apt-repository -y http://dl.openfoam.org/ubuntu
+          sudo apt-get update -qq && sudo apt-get install -y openfoam12
+      - name: Mesh and solve ${{ matrix.case }}
+        run: |
+          set +e
+          source /opt/openfoam12/etc/bashrc
+          set -e
+          python3 make_sweep.py --create --only=${{ matrix.case }}
+          cd runs/${{ matrix.case }}
+          # screening mesh: drop every refinement level by one (medium -> coarse), ~0.6 M cells
+          foamDictionary system/caseParams -entry LVL   -set 4
+          foamDictionary system/caseParams -entry LVL_1 -set 3
+          foamDictionary system/caseParams -entry LVL_2 -set 2
+          foamDictionary system/caseParams -entry LVL_3 -set 1
+          foamDictionary system/controlDict -entry endTime -set 1500
+          chmod +x Allrun && ./Allrun --run
+        working-directory: ${{ env.ROOT }}/sweep
+      - name: Summary and acceptance gates
+        if: always()
+        run: python3 summarize_run.py runs/${{ matrix.case }} || true
+        working-directory: ${{ env.ROOT }}/sweep
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: groupD-${{ matrix.case }}
+          path: |
+            cvwt-upload-to-github/cfd/stage1/sweep/runs/*/log.*
+            cvwt-upload-to-github/cfd/stage1/sweep/runs/*/run_summary.json
+            cvwt-upload-to-github/cfd/stage1/sweep/runs/*/postProcessing/**
+          retention-days: 30
