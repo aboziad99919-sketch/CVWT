@@ -47,10 +47,20 @@ r["flows_m3ps"] = Q; r["Q_filter_Lpm"] = (abs(Q["outletFilter"]) * 6e4) if Q["ou
 if all(Q.values()):
     r["mass_imbalance_rel"] = abs(sum(Q.values())) / max(abs(Q["inlet"]), 1e-30)
 p = probes()
-if p:                      # probe order: bore 0.20, bore 0.30, plenum 0.060, bed top 0.0465, below bed 0.007, 0.020, freestream
-    r["probe_p_m2s2"] = dict(zip(["bore_0.20", "bore_0.30", "plenum_0.060", "bed_top", "below_bed_0.007", "z_0.020", "freestream"], p))
+# Probe order must match system/controlDict exactly. It listed EIGHT locations while this list held
+# seven names, so zip() silently dropped the last one: "freestream" was assigned to p[6], a point on
+# the axis inside the housing at z = 20 mm. That point lies INSIDE the porous bed whenever the bed is
+# thicker than 25 mm, which is why the 36 mm cases reported a shallower core Cp than the 18 mm ones.
+PROBE_NAMES = ["bore_0.20", "bore_0.30", "plenum_0.060", "bed_top", "below_bed_0.007",
+               "slot_-0.020", "below_bed_0.020", "freestream"]
+if p:
+    if len(p) != len(PROBE_NAMES):
+        r["probe_warning"] = f"controlDict wrote {len(p)} probes, this parser names {len(PROBE_NAMES)}"
+    r["probe_p_m2s2"] = dict(zip(PROBE_NAMES, p))
     rho = 1.2; r["dp_bed_Pa"] = (p[3] - p[4]) * rho
-    U = float(r["params"]["U_mps"]); r["Cp_core_at_holes"] = (p[0] - p[6]) / (0.5 * U**2)
+    U = float(r["params"]["U_mps"])
+    r["Cp_core_at_holes"] = (p[0] - p[7]) / (0.5 * U**2)          # bore vs true freestream
+    r["Cp_core_vs_plenum"] = (p[0] - p[6]) / (0.5 * U**2)         # the old quantity, kept for comparison
 r["gates"] = {"mesh_quality": bool(r["mesh"].get("mesh_ok") and not r["mesh"].get("failed_checks")),
               "convergence": bool(r["convergence"].get("converged")),
               "conservation": (r["mass_imbalance_rel"] if r.get("mass_imbalance_rel") is not None else 1) < 1e-3}

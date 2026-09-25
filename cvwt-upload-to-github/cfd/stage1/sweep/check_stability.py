@@ -40,7 +40,7 @@ def dat(case, name):
 
 def probes(case):
     fs = sorted(glob.glob(os.path.join(case, "postProcessing", "probes", "*", "p")))
-    return read_cols(fs[-1], list(range(1, 8))) if fs else []
+    return read_cols(fs[-1], list(range(1, 9))) if fs else []   # eight probes, not seven
 
 def params(case):
     """Case parameters. run_summary.json is what the artifacts actually carry; case_params.json is
@@ -107,7 +107,8 @@ for c in cases:
     wp = window(probes(c))
     if wp:
         P = [x for _, x in wp]
-        rows.append((stat([(p[0] - p[6]) / (0.5 * U * U) for p in P], 1.0, "Cp_core"), "-"))
+        rows.append((stat([(p[0] - p[7]) / (0.5 * U * U) for p in P], 1.0, "Cp_core"), "-"))
+        rows.append((stat([(p[0] - p[6]) / (0.5 * U * U) for p in P], 1.0, "Cp_vs_plenum (old)"), "-"))
         rows.append((stat([(p[3] - p[4]) * RHO for p in P], q, "dp_bed"), "Pa"))
     rows = [(r, u) for r, u in rows if r]
     if not rows:
