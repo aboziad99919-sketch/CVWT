@@ -9,6 +9,24 @@ import glob, math, os, re, sys
 RUNS = sys.argv[1] if len(sys.argv) > 1 else "runs"
 ABS_TOL, DROP_ORDERS = 1e-5, 4.0
 RE_RES = re.compile(r"Solving for (\w+), Initial residual = ([-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)")
+RE_TIME = re.compile(r"^Time = ", re.M)
+
+
+def first_solve_per_iteration(txt):
+    """p is solved more than once per SIMPLE iteration (nNonOrthogonalCorrectors 1), and the later
+    solves sit about an order lower. Taking every solve makes the tail compare a first-solve against
+    a second-solve and invents an improvement that is not there. Keep only the FIRST solve of each
+    field in each time step, which is the standard convergence measure."""
+    hist, seen = {}, set()
+    for line in txt.splitlines():
+        if line.startswith("Time = "):
+            seen = set()
+            continue
+        m = RE_RES.search(line)
+        if m and m.group(1) not in seen:
+            seen.add(m.group(1))
+            hist.setdefault(m.group(1), []).append(float(m.group(2)))
+    return hist
 
 logs = sorted(glob.glob(os.path.join(RUNS, "*", "log.foamRun")))
 if not logs:
@@ -17,11 +35,9 @@ if not logs:
 agree = disagree = 0
 for lg in logs:
     case = os.path.basename(os.path.dirname(lg))
-    hist = {}
     txt = open(lg, errors="replace").read()
-    for m in RE_RES.finditer(txt):
-        hist.setdefault(m.group(1), []).append(float(m.group(2)))
-    iters = len(re.findall(r"^Time = ", txt, re.M))
+    hist = first_solve_per_iteration(txt)
+    iters = len(RE_TIME.findall(txt))
     fatal = bool(re.search(r"FOAM FATAL", txt))
     if not hist:
         print(f"{case}: no residuals in log (fatal={fatal})"); continue
