@@ -1,0 +1,67 @@
+# Group B: the filter sensitivity study. F1-F3 x bed thickness 9/18/36 mm, U = 4 m/s, top capped.
+# Revised after group A, which measured a NEGATIVE core Cp (-0.20): flow runs UP through the bed,
+# from the base slots to the radial holes, not down. Two consequences for this matrix:
+#  - F4 is dropped. Rescaled on the measured driving pressure it passes ~0.09 L/min, which is
+#    closed for any practical purpose. F3 is kept only to bound the fine-media end.
+#  - group B2 (open tube top) is dropped. Group A measured a 0.4 % difference between capped and
+#    open, because the top opening sits in the same suction field as the holes and cannot
+#    short-circuit the bed. The 4x bypass the pre-screen predicted was an artefact of the sign.
+# 9 cases, all in parallel, coarse mesh, serial solver. Manual trigger only.
+name: cfd-stage1-groupB
+on:
+  workflow_dispatch:
+env:
+  ROOT: cvwt-upload-to-github/cfd/stage1
+jobs:
+  screen:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+    strategy:
+      fail-fast: false          # one bad case must not cancel the other fifteen
+      max-parallel: 8
+      matrix:
+        case:
+          - B1_F1_t09_U4_az000_capped_holes_medium
+          - B1_F1_t18_U4_az000_capped_holes_medium
+          - B1_F1_t36_U4_az000_capped_holes_medium
+          - B1_F2_t09_U4_az000_capped_holes_medium
+          - B1_F2_t18_U4_az000_capped_holes_medium
+          - B1_F2_t36_U4_az000_capped_holes_medium
+          - B1_F3_t09_U4_az000_capped_holes_medium
+          - B1_F3_t18_U4_az000_capped_holes_medium
+          - B1_F3_t36_U4_az000_capped_holes_medium
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install OpenFOAM 12
+        run: |
+          sudo sh -c "wget -qO - https://dl.openfoam.org/gpg.key > /etc/apt/trusted.gpg.d/openfoam.asc"
+          sudo add-apt-repository -y http://dl.openfoam.org/ubuntu
+          sudo apt-get update -qq && sudo apt-get install -y openfoam12
+      - name: Mesh and solve ${{ matrix.case }}
+        run: |
+          set +e
+          source /opt/openfoam12/etc/bashrc
+          set -e
+          python3 make_sweep.py --create --only=${{ matrix.case }}
+          cd runs/${{ matrix.case }}
+          # screening mesh: drop every refinement level by one (medium -> coarse), ~0.6 M cells
+          foamDictionary system/caseParams -entry LVL   -set 4
+          foamDictionary system/caseParams -entry LVL_1 -set 3
+          foamDictionary system/caseParams -entry LVL_2 -set 2
+          foamDictionary system/caseParams -entry LVL_3 -set 1
+          foamDictionary system/controlDict -entry endTime -set 1500
+          chmod +x Allrun && ./Allrun --run
+        working-directory: ${{ env.ROOT }}/sweep
+      - name: Summary and acceptance gates
+        if: always()
+        run: python3 summarize_run.py runs/${{ matrix.case }} || true
+        working-directory: ${{ env.ROOT }}/sweep
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: groupB-${{ matrix.case }}
+          path: |
+            cvwt-upload-to-github/cfd/stage1/sweep/runs/*/log.*
+            cvwt-upload-to-github/cfd/stage1/sweep/runs/*/run_summary.json
+            cvwt-upload-to-github/cfd/stage1/sweep/runs/*/postProcessing/**
+          retention-days: 30
