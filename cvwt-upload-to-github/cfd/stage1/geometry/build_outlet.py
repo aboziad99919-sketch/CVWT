@@ -7,12 +7,16 @@ Layers (mm):  median plate + deck slab z -26..-15 (extends past the CFD domain; 
               mount plate 170x110  z -15..-5 ;  mount plate 170x170  z -5..0 ;  housing floor 36x36 square z 0..5
 Slot layout (PLACEHOLDER, parametric): N parallel slots along x (lane direction), width W, rib RIB, clipped to r = 16 mm
 inside the Ø34 housing bore.  Default 3 x 6 mm slots, 2 mm ribs -> ~467 mm^2 open (51 % of the Ø34 placeholder).
-Usage: python build_outlet.py [W_mm=6] [RIB_mm=2]"""
+Usage: python build_outlet.py [W_mm=6] [RIB_mm=2] [RCLIP_mm=16]"""
 import json, math, sys
 import numpy as np
 W = float(sys.argv[1]) if len(sys.argv) > 1 else 6.0
 RIB = float(sys.argv[2]) if len(sys.argv) > 2 else 2.0
-RCLIP, MARGIN = 16.0, 1.0
+# The slots must widen with the housing bore or they become the throttle: group A showed the internal
+# passages already consume most of the head. RCLIP defaults to the as-drawn 16 mm.
+RCLIP = float(sys.argv[3]) if len(sys.argv) > 3 else 16.0
+MARGIN = 1.0
+SUFFIX = "" if abs(RCLIP - 16.0) < 1e-9 else f"_r{int(round(RCLIP))}"
 
 slots, k, pitch = [], 0, W + RIB          # odd layout: centre slot on y = 0
 while True:
@@ -68,7 +72,7 @@ def split(q):
             if np.dot(np.cross(c[1] - c[0], c[2] - c[0]), n) < 0: c = c[::-1]
             out += [(c[0], c[1], c[2]), (c[0], c[2], c[3])]
     return out
-with open("cvwt_base_stack.stl", "w") as f:
+with open(f"cvwt_base_stack{SUFFIX}.stl", "w") as f:
     for region, qs in quads.items():
         f.write(f"solid {region}\n")
         for q in qs:
@@ -85,4 +89,4 @@ info = {"shape": "parallel rectangular slots along x (lane direction) - PLACEHOL
         "passage_length_mm": 30, "passage": "housing floor 5 + mount plates 5 + 10 + median plate 10 mm",
         "hydraulic_diameter_mm": round(np.mean([2*(s[1]-s[0])*W/((s[1]-s[0])+W) for s in slots]), 2),
         "exit": "domain bottom z = -25 mm (underside of median plate) -> patch outletFilter, total pressure 0 (still room air)"}
-json.dump(info, open("outlet_slots.json", "w"), indent=2); print(json.dumps(info, indent=1))
+json.dump(info, open((f"outlet_slots{SUFFIX}.json"), "w"), indent=2); print(json.dumps(info, indent=1))
