@@ -52,15 +52,24 @@ p = probes()
 # the axis inside the housing at z = 20 mm. That point lies INSIDE the porous bed whenever the bed is
 # thicker than 25 mm, which is why the 36 mm cases reported a shallower core Cp than the 18 mm ones.
 PROBE_NAMES = ["bore_0.20", "bore_0.30", "plenum_0.060", "bed_top", "below_bed_0.007",
-               "slot_-0.020", "below_bed_0.020", "freestream"]
+               "slot_-0.020", "below_bed_0.020", "freestream",
+               # external rake at r = 45 mm, then r = 70 mm: where can an intake sit and still
+               # see ambient? Inside the rotor's suction field there is no head left for the bed.
+               "ext_r45_z010", "ext_r45_z030", "ext_r45_z050", "ext_r45_z070",
+               "ext_r45_z100", "ext_r45_z140", "ext_r45_z180", "ext_r45_z240",
+               "ext_r70_z010", "ext_r70_z050", "ext_r70_z100", "ext_r70_z180"]
+FREESTREAM = PROBE_NAMES.index("freestream")
 if p:
     if len(p) != len(PROBE_NAMES):
         r["probe_warning"] = f"controlDict wrote {len(p)} probes, this parser names {len(PROBE_NAMES)}"
     r["probe_p_m2s2"] = dict(zip(PROBE_NAMES, p))
     rho = 1.2; r["dp_bed_Pa"] = (p[3] - p[4]) * rho
     U = float(r["params"]["U_mps"])
-    r["Cp_core_at_holes"] = (p[0] - p[7]) / (0.5 * U**2)          # bore vs true freestream
-    r["Cp_core_vs_plenum"] = (p[0] - p[6]) / (0.5 * U**2)         # the old quantity, kept for comparison
+    r["Cp_core_at_holes"] = (p[0] - p[FREESTREAM]) / (0.5 * U**2)   # bore vs true freestream
+    r["Cp_core_vs_plenum"] = (p[0] - p[6]) / (0.5 * U**2)           # the old quantity, kept for comparison
+    # Cp on the external rake: an intake is only usable where this is near zero.
+    r["Cp_external"] = {n: round((v - p[FREESTREAM]) / (0.5 * U**2), 4)
+                        for n, v in zip(PROBE_NAMES, p) if n.startswith("ext_")}
 r["gates"] = {"mesh_quality": bool(r["mesh"].get("mesh_ok") and not r["mesh"].get("failed_checks")),
               "convergence": bool(r["convergence"].get("converged")),
               "conservation": (r["mass_imbalance_rel"] if r.get("mass_imbalance_rel") is not None else 1) < 1e-3}

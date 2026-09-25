@@ -17,7 +17,8 @@ def k_omega(U, I=0.05, l=0.01, cmu=0.09):
     k = 1.5 * (U * I) ** 2; return k, math.sqrt(k) / (cmu ** 0.25 * l)
 
 cases = []
-def add(group, fid, t_mm, U, az, top, mesh="medium", core="holes", why="", bed_z0=None):
+def add(group, fid, t_mm, U, az, top, mesh="medium", core="holes", why="", bed_z0=None,
+        bore_mm=17.0, slot_r_mm=16.0):
     """core: 'holes' = perforated cylinder (design as drawn); 'solid' = unperforated cylinder (reversed layout).
 
     bed_z0 fixes the bed BOTTOM [m]; the top then follows as bed_z0 + thickness. Left as None the bed
@@ -25,8 +26,11 @@ def add(group, fid, t_mm, U, az, top, mesh="medium", core="holes", why="", bed_z
     couples thickness to the length of the inlet plenum below the bed (the slot deck top is at
     z = 0.005 m), and group BP exists to separate the two."""
     cid = f"{group}_{fid}_t{t_mm:02d}_U{U}_az{int(az*10):03d}_{top}_{core}_{mesh}"
+    if abs(bore_mm - 17.0) > 1e-9 or abs(slot_r_mm - 16.0) > 1e-9:
+        cid += f"_b{int(round(bore_mm))}s{int(round(slot_r_mm))}"
     cases.append(dict(case_id=cid, group=group, filter=fid, thickness_mm=t_mm, U_mps=U, azimuth_deg=az,
-                      top=top, core=core, mesh=mesh, purpose=why, bed_z0=bed_z0))
+                      top=top, core=core, mesh=mesh, purpose=why, bed_z0=bed_z0,
+                      bore_mm=bore_mm, slot_r_mm=slot_r_mm))
 
 # 1A  map the core driving pressure (the key unknown of the pre-screen) - bed sealed or empty
 for az in (0, 22.5, 45, 67.5):
@@ -49,6 +53,21 @@ for fid in ("F1", "F2", "F3"):
     for t_mm in (9, 18, 36):
         add("BP", fid, t_mm, 4, 0, "capped", bed_z0=0.009,
             why="bed thickness at constant inlet plenum (control for the group-B Cp anomaly)")
+
+# 1D  the two questions the group-A/B results raise, measured rather than modelled.
+#  D1: how high can the intake go? The external probe rake (in controlDict, so every case carries it)
+#      maps Cp up the outside of the CVWT. An intake is only usable where that is still near ambient.
+#      One sealed case is enough, since the external field barely depends on the small internal flow.
+#  D2: bed area. The head available to the bed is capped near 1.62 Pa at 4 m/s, so the way to move
+#      more air is a lower face velocity, i.e. a wider bed. Ø34 (as drawn) / Ø48 / Ø68, slots widened
+#      in step so they do not become the new throttle.
+#  D3: Ø68 with the as-drawn slots, to separate the bed-area gain from the slot restriction.
+add("D1", "SEALED", 18, 4, 0, "capped", why="external Cp rake: how high can the intake sit?")
+for bore, slot in ((17.0, 16.0), (24.0, 23.0), (34.0, 33.0)):
+    add("D2", "F2", 18, 4, 0, "capped", bore_mm=bore, slot_r_mm=slot,
+        why=f"bed area sweep: bore r={bore:.0f} mm, slots widened to r={slot:.0f} mm")
+add("D3", "F2", 18, 4, 0, "capped", bore_mm=34.0, slot_r_mm=16.0,
+    why="bore r=34 mm with the as-drawn slots: isolates the slot throttle")
 
 # 1C  speed scaling check (Δp ~ U^1 vs U^2 regime) for one mid candidate
 for U in (2, 6):
@@ -82,8 +101,14 @@ def create(case):
         raise FileExistsError(f"{dst} exists - not overwriting")
     shutil.copytree(TEMPLATE, dst)
     g = dst / "constant" / "geometry"; g.mkdir(parents=True, exist_ok=True)
-    for n in ("cvwt_caps", "cvwt_housing_cfd", "cvwt_topcap", "cvwt_base_stack"):
+    bore, slot_r = case.get("bore_mm", 17.0), case.get("slot_r_mm", 16.0)
+    hsuf = "" if abs(bore - 17.0) < 1e-9 else f"_r{int(round(bore))}"
+    ssuf = "" if abs(slot_r - 16.0) < 1e-9 else f"_r{int(round(slot_r))}"
+    for n in ("cvwt_caps", "cvwt_topcap"):
         shutil.copy(GEOM / f"{n}.stl", g / f"{n}.stl")
+    # widened variants keep the surface NAMES, so snappy/topoSet need no per-case edits
+    shutil.copy(GEOM / f"cvwt_housing_cfd{hsuf}.stl", g / "cvwt_housing_cfd.stl")
+    shutil.copy(GEOM / f"cvwt_base_stack{ssuf}.stl", g / "cvwt_base_stack.stl")
     # the core cylinder: perforated (as drawn) or unperforated (reversed layout) - same patch name either way
     shutil.copy(GEOM / ("cvwt_tube.stl" if case["core"] == "holes" else "cvwt_tube_solid.stl"), g / "cvwt_tube.stl")
     rotate_stl(GEOM / "cvwt_fins.stl", g / "cvwt_fins.stl", case["azimuth_deg"])
@@ -94,6 +119,8 @@ def create(case):
             "FILTER_Z0": f"{(case['bed_z0'] if case.get('bed_z0') is not None else 0.045 - case['thickness_mm']/1000):.4f}",
             "FILTER_Z1": f"{((case['bed_z0'] + case['thickness_mm']/1000) if case.get('bed_z0') is not None else 0.045):.4f}",
             "FILTER_ID": case["filter"],
+            # the porous cylinder is cut 0.2 mm oversize so it reaches the wall without leaving a gap
+            "BORE_R": f"{(case.get('bore_mm', 17.0) + 0.2)/1000:.4f}",
             "LVL": L, "LVL_1": L - 1, "LVL_2": L - 2, "LVL_3": L - 3, "NPROCS": 4}
     for p in dst.rglob("*"):
         if p.is_file() and p.suffix != ".stl":
