@@ -17,11 +17,16 @@ def k_omega(U, I=0.05, l=0.01, cmu=0.09):
     k = 1.5 * (U * I) ** 2; return k, math.sqrt(k) / (cmu ** 0.25 * l)
 
 cases = []
-def add(group, fid, t_mm, U, az, top, mesh="medium", core="holes", why=""):
-    """core: 'holes' = perforated cylinder (design as drawn); 'solid' = unperforated cylinder (reversed layout)."""
+def add(group, fid, t_mm, U, az, top, mesh="medium", core="holes", why="", bed_z0=None):
+    """core: 'holes' = perforated cylinder (design as drawn); 'solid' = unperforated cylinder (reversed layout).
+
+    bed_z0 fixes the bed BOTTOM [m]; the top then follows as bed_z0 + thickness. Left as None the bed
+    hangs from a fixed top of 0.045 m and grows downward, which is how groups A-R were run. That
+    couples thickness to the length of the inlet plenum below the bed (the slot deck top is at
+    z = 0.005 m), and group BP exists to separate the two."""
     cid = f"{group}_{fid}_t{t_mm:02d}_U{U}_az{int(az*10):03d}_{top}_{core}_{mesh}"
     cases.append(dict(case_id=cid, group=group, filter=fid, thickness_mm=t_mm, U_mps=U, azimuth_deg=az,
-                      top=top, core=core, mesh=mesh, purpose=why))
+                      top=top, core=core, mesh=mesh, purpose=why, bed_z0=bed_z0))
 
 # 1A  map the core driving pressure (the key unknown of the pre-screen) - bed sealed or empty
 for az in (0, 22.5, 45, 67.5):
@@ -35,6 +40,16 @@ for fid in ("F1", "F2", "F3", "F4"):
     for t in (9, 18, 36):
         add("B1", fid, t, 4, 0, "capped", why="filter resistance x thickness sensitivity")
     add("B2", fid, 18, 4, 0, "open", why="filter bypass through open tube top")
+# 1BP control for the group-B anomaly: core Cp did not fall monotonically with bed thickness, and the
+#     36 mm cases showed the SHALLOWEST suction when they should show the deepest. In group B the bed
+#     hangs from a fixed top at 45 mm, so a thicker bed also starts closer to the slot exits and loses
+#     its inlet plenum. Here the bed BOTTOM is pinned at 9 mm instead, giving every case the same 4 mm
+#     plenum, so thickness is varied on its own. t36 is unchanged from B1 and is the shared anchor.
+for fid in ("F1", "F2", "F3"):
+    for t_mm in (9, 18, 36):
+        add("BP", fid, t_mm, 4, 0, "capped", bed_z0=0.009,
+            why="bed thickness at constant inlet plenum (control for the group-B Cp anomaly)")
+
 # 1C  speed scaling check (Δp ~ U^1 vs U^2 regime) for one mid candidate
 for U in (2, 6):
     for top in ("capped", "open"):
@@ -76,7 +91,9 @@ def create(case):
     else: d, f = float(FILTERS[case["filter"]]["Darcy_d_1/m2"]), float(FILTERS[case["filter"]]["Forchheimer_f_1/m"])
     k, om = k_omega(case["U_mps"]); L = LEVELS[case["mesh"]]
     subs = {"U_IN": case["U_mps"], "K_IN": f"{k:.6g}", "OMEGA_IN": f"{om:.6g}", "D_COEFF": f"{d:.6g}", "F_COEFF": f"{f:.6g}",
-            "FILTER_Z0": f"{0.045 - case['thickness_mm']/1000:.4f}", "FILTER_ID": case["filter"],
+            "FILTER_Z0": f"{(case['bed_z0'] if case.get('bed_z0') is not None else 0.045 - case['thickness_mm']/1000):.4f}",
+            "FILTER_Z1": f"{((case['bed_z0'] + case['thickness_mm']/1000) if case.get('bed_z0') is not None else 0.045):.4f}",
+            "FILTER_ID": case["filter"],
             "LVL": L, "LVL_1": L - 1, "LVL_2": L - 2, "LVL_3": L - 3, "NPROCS": 4}
     for p in dst.rglob("*"):
         if p.is_file() and p.suffix != ".stl":
