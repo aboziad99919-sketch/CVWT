@@ -13,6 +13,7 @@ OMEGA_IN    @@OMEGA_IN@@;      // sqrt(k)/(Cmu^0.25 l), l = 0.01 m (ASSUMED)
 D_COEFF     @@D_COEFF@@;       // Darcy d [1/m2]  (Ergun, candidate @@FILTER_ID@@)
 F_COEFF     @@F_COEFF@@;       // Forchheimer f [1/m]
 FILTER_Z0   @@FILTER_Z0@@;     // porous bed bottom [m]
+BORE_R      @@BORE_R@@;        // housing bore radius [m]; the porous zone is cut 0.2 mm oversize
 FILTER_Z1   @@FILTER_Z1@@;     // porous bed top [m]  (bore plenum runs z = 0.005 to 0.058)
 LVL         @@LVL@@;           // surface refinement level near CVWT core (medium = 5 -> 0.625 mm)
 LVL_1       @@LVL_1@@;

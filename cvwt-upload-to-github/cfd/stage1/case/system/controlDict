@@ -47,6 +47,13 @@ functions
             (0 0 -0.020)    // inside centre outlet slot (median-plate level)
             (0 0 0.020)     // below bed for t <= 18 mm
             (-0.3 0 0.2)    // upstream freestream reference
+            // External rake, r = 45 mm (just outside the Ø38 housing, inboard of the Ø112 rotor).
+            // The intake can only sit where the outside pressure is still near ambient: inside the
+            // rotor's suction field there is no head left to drive the bed.
+            (0.045 0 0.010)  (0.045 0 0.030)  (0.045 0 0.050)  (0.045 0 0.070)
+            (0.045 0 0.100)  (0.045 0 0.140)  (0.045 0 0.180)  (0.045 0 0.240)
+            // and the same heights outboard of the rotor, r = 70 mm
+            (0.070 0 0.010)  (0.070 0 0.050)  (0.070 0 0.100)  (0.070 0 0.180)
         );
     }
 }

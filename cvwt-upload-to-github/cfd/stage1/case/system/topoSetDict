@@ -11,7 +11,7 @@ actions
 (
     // porous biochar bed = fluid cells inside the housing bore between FILTER_Z0 and FILTER_Z1
     { name filterCells; type cellSet; action new; source cylinderToCell;
-      point1 (0 0 $FILTER_Z0); point2 (0 0 $FILTER_Z1); radius 0.0172; }
+      point1 (0 0 $FILTER_Z0); point2 (0 0 $FILTER_Z1); radius $BORE_R; }
     { name filter; type cellZoneSet; action new; source setToCellZone; set filterCells; }
 
 );
