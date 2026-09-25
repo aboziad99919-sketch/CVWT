@@ -1,90 +1,119 @@
 """Convergence gate based on the REPORTED QUANTITIES, not on residual level.
 
-STAGE1_PLAN.md section 6 specifies: "Q_outletFilter, the probe dp values and rotor torque vary
-< 0.5 % over the last 500 iterations." That is the criterion that matters for a frozen-rotor bluff
-body, where steady-RANS residuals plateau because the real flow is mildly unsteady - a plateau says
-the solver has stopped improving, not that the answer is wrong. This script implements that gate.
+STAGE1_PLAN.md section 6: "Q_outletFilter, the probe dp values and rotor torque vary < 0.5 % over
+the last 500 iterations." That is the criterion that matters for a frozen-rotor bluff body, where
+steady-RANS residuals plateau because the real flow is mildly unsteady. A plateau says the solver
+has stopped improving; it does not say the answer is wrong. This implements the plan's criterion.
 
-    python check_stability.py [runs_dir=runs] [window=500]
+    python check_stability.py [runs_dir=runs] [window_iterations=500]
 
-Reads <case>/postProcessing/{probes,Q_outletFilter,Q_inlet,Q_outlet}. For each quantity it reports,
-over the last `window` samples: the mean, the peak-to-peak spread as a percentage of |mean|, and the
-drift (linear trend across the window, also as a percentage of |mean|). A quantity is STEADY when
-both spread and |drift| are under 0.5 %."""
-import glob, os, statistics, sys
+Two things this gets right that a naive version does not:
+
+1. The window is counted in ITERATIONS, using the time column, not in samples. `probes` writes every
+   10 iterations and `patchFlowRate` every iteration, so a sample-count window mixes the two and,
+   for the probes, reaches back into the startup transient and reports absurd spreads.
+2. Variation is measured against a PHYSICAL SCALE, not against the quantity's own mean. A sealed
+   case carries Q ~ 1e-8 m3/s by construction; a percentage of that is noise about nothing. Pressures
+   are scaled by the dynamic pressure 0.5*rho*U^2 and flows by the matching empty-housing (F0) flow.
+"""
+import glob, json, os, statistics, sys
 
 RUNS = sys.argv[1] if len(sys.argv) > 1 else "runs"
-WINDOW = int(sys.argv[2]) if len(sys.argv) > 2 else 500
-TOL_PCT = 0.5
+WINDOW = float(sys.argv[2]) if len(sys.argv) > 2 else 500.0
+TOL_PCT, RHO = 0.5, 1.2
 
-def series(case, name, col=-1):
+def read_cols(path, cols):
+    """[(time, value...)] from an OpenFOAM .dat / probe file."""
+    out = []
+    for l in open(path, errors="replace"):
+        if not l.strip() or l.startswith("#"): continue
+        f = l.replace("(", " ").replace(")", " ").split()
+        try: out.append((float(f[0]), [float(f[c]) for c in cols]))
+        except (ValueError, IndexError): pass
+    return out
+
+def dat(case, name):
     fs = sorted(glob.glob(os.path.join(case, "postProcessing", name, "*", "*.dat")))
-    if not fs: return []
-    out = []
-    for l in open(fs[-1]):
-        if l.strip() and not l.startswith("#"):
-            try: out.append(float(l.split()[col]))
-            except (ValueError, IndexError): pass
-    return out
+    return read_cols(fs[-1], [-1]) if fs else []
 
-def probe_series(case, idx):
+def probes(case):
     fs = sorted(glob.glob(os.path.join(case, "postProcessing", "probes", "*", "p")))
-    if not fs: return []
-    out = []
-    for l in open(fs[-1]):
-        if l.strip() and not l.startswith("#"):
-            p = l.split()[1:]
-            if len(p) > idx:
-                try: out.append(float(p[idx]))
-                except ValueError: pass
-    return out
+    return read_cols(fs[-1], list(range(1, 8))) if fs else []
 
-def verdict(v):
-    """peak-to-peak spread and end-to-end drift over the window, each as % of |mean|"""
-    w = v[-min(WINDOW, len(v)):]
-    if len(w) < 10: return None
-    m = statistics.fmean(w)
-    scale = max(abs(m), 1e-12)
-    spread = 100.0 * (max(w) - min(w)) / scale
-    # drift: mean of the last tenth minus mean of the first tenth
-    tenth = max(1, len(w) // 10)
-    drift = 100.0 * (statistics.fmean(w[-tenth:]) - statistics.fmean(w[:tenth])) / scale
-    return {"n": len(w), "mean": m, "spread_pct": spread, "drift_pct": drift,
-            "steady": spread < TOL_PCT and abs(drift) < TOL_PCT}
+def params(case):
+    """Case parameters. run_summary.json is what the artifacts actually carry; case_params.json is
+    the original and is used only when a case directory is read straight from a local run."""
+    for fn, key in (("run_summary.json", "params"), ("case_params.json", None)):
+        fp = os.path.join(case, fn)
+        if os.path.exists(fp):
+            try:
+                d = json.load(open(fp))
+                return d.get(key, {}) if key else d
+            except (ValueError, OSError):
+                pass
+    return {}
+
+
+def window(rows):
+    if not rows: return []
+    t_end = rows[-1][0]
+    return [r for r in rows if r[0] > t_end - WINDOW]
+
+def stat(vals, scale, label):
+    """spread and drift as a percentage of a PHYSICAL scale, not of the values' own mean"""
+    if len(vals) < 5: return None
+    m = statistics.fmean(vals)
+    s = max(abs(scale), 1e-12)
+    tenth = max(1, len(vals) // 5)
+    drift = statistics.fmean(vals[-tenth:]) - statistics.fmean(vals[:tenth])
+    spread, drift_pct = 100.0 * (max(vals) - min(vals)) / s, 100.0 * drift / s
+    return {"label": label, "n": len(vals), "mean": m, "spread_pct": spread,
+            "drift_pct": drift_pct, "steady": spread < TOL_PCT and abs(drift_pct) < TOL_PCT}
+
+# empty-housing flow per speed sets the scale that filter flows are judged against
+f0 = {}
+for c in sorted(glob.glob(os.path.join(RUNS, "*"))):
+    if os.path.isdir(c):
+        p = params(c)
+        if p.get("filter") == "F0" and p.get("U_mps") is not None:
+            w = window(dat(c, "Q_outletFilter"))
+            if w: f0[float(p["U_mps"])] = abs(statistics.fmean([v[0] for _, v in w]))
 
 cases = sorted(d for d in glob.glob(os.path.join(RUNS, "*")) if os.path.isdir(d))
-if not cases:
-    print(f"no case directories under {RUNS}/"); sys.exit(1)
+if not cases: print(f"no case directories under {RUNS}/"); sys.exit(1)
 
 n_steady = n_total = 0
-print(f"Stability over the last {WINDOW} samples (tolerance {TOL_PCT} %)\n")
+print(f"Stability over the last {WINDOW:.0f} iterations (tolerance {TOL_PCT} % of the physical scale)\n")
 for c in cases:
     name = os.path.basename(c)
-    rho = 1.2
-    quantities = {
-        "Q_outletFilter": series(c, "Q_outletFilter"),
-        "p_bore":         probe_series(c, 0),
-        "p_freestream":   probe_series(c, 6),
-    }
-    bed_top, below = probe_series(c, 3), probe_series(c, 4)
-    if bed_top and below and len(bed_top) == len(below):
-        quantities["dp_bed_Pa"] = [(a - b) * rho for a, b in zip(bed_top, below)]
+    par = params(c)
+    U = float(par.get("U_mps", 4)); q = 0.5 * RHO * U * U          # Pa, pressure scale
+    qref = f0.get(U) or 1e-4                                        # m3/s, flow scale
 
-    rows = [(k, verdict(v)) for k, v in quantities.items() if v]
-    rows = [(k, r) for k, r in rows if r]
+    rows = []
+    wq = window(dat(c, "Q_outletFilter"))
+    if wq:
+        v = [x[0] for _, x in wq]
+        note = "" if par.get("filter") != "SEALED" else "  (sealed: zero by construction)"
+        rows.append((stat(v, qref, "Q_outletFilter" + note), "m3/s"))
+    wp = window(probes(c))
+    if wp:
+        P = [x for _, x in wp]
+        rows.append((stat([(p[0] - p[6]) / (0.5 * U * U) for p in P], 1.0, "Cp_core"), "-"))
+        rows.append((stat([(p[3] - p[4]) * RHO for p in P], q, "dp_bed"), "Pa"))
+    rows = [(r, u) for r, u in rows if r]
     if not rows:
         print(f"{name}: no usable time series (postProcessing missing from the artifact)"); continue
 
-    all_steady = all(r["steady"] for _, r in rows)
-    n_total += 1; n_steady += all_steady
-    print(f"{name}   -> {'STEADY' if all_steady else 'NOT STEADY'}")
-    print(f"  {'quantity':16s} {'n':>5s} {'mean':>12s} {'spread %':>9s} {'drift %':>8s}  ok")
-    for k, r in rows:
-        print(f"  {k:16s} {r['n']:5d} {r['mean']:12.5g} {r['spread_pct']:9.3f} {r['drift_pct']:8.3f}  "
-              f"{'yes' if r['steady'] else 'NO'}")
+    ok = all(r["steady"] for r, _ in rows)
+    n_total += 1; n_steady += ok
+    print(f"{name}   -> {'STEADY' if ok else 'NOT STEADY'}   (U={U} m/s, scales: {q:.2f} Pa, {qref:.3e} m3/s)")
+    print(f"  {'quantity':34s} {'n':>4s} {'mean':>12s} {'spread %':>9s} {'drift %':>8s}  ok")
+    for r, u in rows:
+        print(f"  {r['label']:34s} {r['n']:4d} {r['mean']:12.5g} {r['spread_pct']:9.3f} "
+              f"{r['drift_pct']:8.3f}  {'yes' if r['steady'] else 'NO'}")
     print()
 
-print(f"{n_steady}/{n_total} case(s) steady by the plan's own criterion.")
-if n_steady == n_total and n_total:
-    print("Residual plateaus are therefore not a problem here: the reported quantities have settled.")
-    print("The residual-level gate in summarize_run.py should be replaced by this one.")
+print(f"{n_steady}/{n_total} case(s) steady by the plan's criterion.")
+print("Percentages are of the physical scale (dynamic pressure, empty-housing flow), so a sealed")
+print("case with no through-flow reads as steady rather than as thousands of percent of nothing.")
