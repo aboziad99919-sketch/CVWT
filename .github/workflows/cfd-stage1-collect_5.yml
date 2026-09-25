@@ -1,0 +1,117 @@
+# Aggregate finished cases from one or more earlier workflow runs into a single table.
+# Downloads their artifacts with the run's own token (no zips to download by hand),
+# flattens them into runs/<case>/run_summary.json and runs sweep/collect_results.py.
+# Manual trigger only. Takes about a minute.
+name: cfd-stage1-collect
+on:
+  workflow_dispatch:
+    inputs:
+      run_ids:
+        description: "Optional: specific run IDs (comma separated). Leave EMPTY to collect the latest successful run of every stage-1 workflow."
+        required: false
+        default: ""
+        type: string
+env:
+  ROOT: cvwt-upload-to-github/cfd/stage1
+jobs:
+  collect:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download artifacts from the named runs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_IDS: ${{ inputs.run_ids }}
+        run: |
+          set -e
+          mkdir -p dl
+          if [ -z "$(echo "$RUN_IDS" | tr -d '[:space:]')" ]; then
+            # No IDs given: take the most recent successful run of each stage-1 sweep workflow.
+            RUN_IDS=""
+            for wf in cfd-stage1-groupA.yml cfd-stage1-groupA-open.yml cfd-stage1-groupB.yml; do
+              id=$(gh run list -R "$GITHUB_REPOSITORY" -w "$wf" -s success -L 1 --json databaseId -q '.[0].databaseId' 2>/dev/null || true)
+              [ -n "$id" ] && RUN_IDS="$RUN_IDS $id"
+            done
+            echo "auto-selected runs:$RUN_IDS"
+            test -n "$(echo "$RUN_IDS" | tr -d '[:space:]')" || { echo "no successful stage-1 runs found"; exit 1; }
+          fi
+          for rid in $(echo "$RUN_IDS" | tr ',' ' '); do
+            echo "::group::run $rid"
+            gh run download "$rid" -R "$GITHUB_REPOSITORY" -D "dl/$rid" || echo "no artifacts on run $rid"
+            echo "::endgroup::"
+          done
+          # Artifacts keep the layout <artifact-name>/<case>/run_summary.json; flatten to runs/<case>/.
+          mkdir -p runs
+          n=0
+          while IFS= read -r f; do
+            case_dir=$(basename "$(dirname "$f")")
+            mkdir -p "runs/$case_dir"
+            cp "$f" "runs/$case_dir/run_summary.json"
+            # the solver log travels with it, for the convergence diagnosis
+            [ -f "$(dirname "$f")/log.foamRun" ] && cp "$(dirname "$f")/log.foamRun" "runs/$case_dir/"
+            # postProcessing time series: the stability gate needs them, they are already in the artifact
+            [ -d "$(dirname "$f")/postProcessing" ] && cp -r "$(dirname "$f")/postProcessing" "runs/$case_dir/"
+            [ -f "$(dirname "$f")/case_params.json" ] && cp "$(dirname "$f")/case_params.json" "runs/$case_dir/"
+            n=$((n+1))
+          done < <(find dl -name run_summary.json)
+          echo "collected $n run_summary.json file(s)"
+          test "$n" -gt 0
+
+      - name: Aggregate
+        run: |
+          set -e
+          CR="$ROOT/sweep/collect_results.py"
+          if [ ! -f "$CR" ]; then
+            CR=$(find . -name collect_results.py -not -path "./dl/*" | head -1)
+          fi
+          test -n "$CR" || { echo "collect_results.py is not in the repo (expected $ROOT/sweep/)"; exit 1; }
+          echo "using $CR"
+          python3 "$CR" runs stage1 | tee collect.txt
+
+      - name: Diagnose convergence
+        if: always()
+        run: |
+          set -e
+          D=$(find . -name diagnose_convergence.py -not -path "./dl/*" | head -1)
+          if [ -n "$D" ]; then python3 "$D" runs | tee convergence.txt; else echo "diagnose_convergence.py not in the repo" | tee convergence.txt; fi
+
+      - name: Check quantity stability (the plan's actual convergence gate)
+        if: always()
+        run: |
+          set -e
+          S=$(find . -name check_stability.py -not -path "./dl/*" | head -1)
+          if [ -n "$S" ]; then python3 "$S" runs 500 | tee stability.txt; else echo "check_stability.py not in the repo" | tee stability.txt; fi
+
+      - name: Put the table in the run summary
+        if: always()
+        run: |
+          {
+            echo '## Stage 1 collected results'
+            echo '```'
+            cat collect.txt
+            echo '```'
+            echo '## Quantity stability (the gate that decides)'
+            echo '```'
+            tail -c 40000 stability.txt
+            echo '```'
+            echo '### Residual diagnosis (secondary)'
+            echo '```'
+            tail -c 40000 convergence.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: stage1-results
+          path: |
+            stage1_results.csv
+            collect.txt
+            convergence.txt
+            stability.txt
+            runs/*/run_summary.json
+          retention-days: 90
