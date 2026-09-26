@@ -43,6 +43,35 @@ if cps:
     print(f"\ncore Cp at the holes, CFD: min {min(cps):.3f}  max {max(cps):.3f}  mean {sum(cps)/len(cps):.3f}")
     print("pre-screen assumed 0.1 / 0.3 / 0.6 - if the CFD range sits outside that, the pre-screen"
           "\nflow estimates scale with it and the plan's table must be re-issued with the measured value.")
+# ---- external pressure rake: how high can an intake sit and still see ambient? ----
+# summarize_run.py writes Cp_external for every case; the rake is a property of the outside flow,
+# so one sealed case is representative. An intake is only usable where Cp is near zero: inside the
+# rotor's suction field there is no head left to drive the bed.
+rake = {}
+for f in sorted(glob.glob(os.path.join(RUNS, "*", "run_summary.json"))):
+    r = json.load(open(f))
+    if r.get("Cp_external"):
+        rake[r.get("case")] = r["Cp_external"]
+if rake:
+    case, cp = sorted(rake.items())[0]
+    print(f"\n---- external Cp rake ({case}) ----")
+    print("An intake needs Cp near 0. Negative means the rotor is already pulling that air down,")
+    print("which cancels the suction the bed depends on.\n")
+    print(f"  {'height [mm]':>11s}  {'r = 45 mm':>12s}  {'r = 70 mm':>12s}")
+    heights = sorted({int(k.split("_z")[1]) for k in cp})
+    for h in heights:
+        a = cp.get(f"ext_r45_z{h:03d}"); b = cp.get(f"ext_r70_z{h:03d}")
+        fa = "     -      " if a is None else f"{a:+12.4f}"
+        fb = "     -      " if b is None else f"{b:+12.4f}"
+        print(f"  {h:11d}  {fa}  {fb}")
+    usable = [h for h in heights if (cp.get(f"ext_r45_z{h:03d}") or -1) > -0.05]
+    if usable:
+        print(f"\n  usable intake heights at r = 45 mm (Cp > -0.05): {', '.join(str(h) for h in usable)} mm")
+        print(f"  highest usable: {max(usable)} mm of the 307 mm rig height")
+    else:
+        print("\n  no height on the rake is clear of the rotor's suction field at r = 45 mm;")
+        print("  an intake would have to sit further out radially, or below the deck.")
+
 failed = [r["case"] for r in rows if r["overall"] != "PASS"]
 if failed:
     print(f"\n{len(failed)} case(s) did not pass every gate: " + ", ".join(str(c) for c in failed[:6]))
