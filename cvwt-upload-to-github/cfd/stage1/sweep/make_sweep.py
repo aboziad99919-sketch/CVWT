@@ -69,6 +69,24 @@ for bore, slot in ((17.0, 16.0), (24.0, 23.0), (34.0, 33.0)):
 add("D3", "F2", 18, 4, 0, "capped", bore_mm=34.0, slot_r_mm=16.0,
     why="bore r=34 mm with the as-drawn slots: isolates the slot throttle")
 
+# 1R+ sealing the core. The D1 rake showed the device generates 7.4 Pa between a deck-level intake
+#     (Cp +0.11) and the rotor's suction field (Cp -0.66), but the bed receives only 1.62 Pa of it.
+#     The perforated core is why: circulation through the hole band pins the bore at an intermediate
+#     -2.99 Pa. An unperforated tube breaks that tie, so the path runs deck -> bed -> bore -> top
+#     exhaust and the bed can see the full drop. The rotor becomes a suction generator; particles
+#     enter with the air at deck level rather than through the blades.
+#  RS: sealed bed, solid core, open top - measures the head the sealed core actually delivers, which
+#      is the number the whole proposal rests on. Run at both bed diameters.
+#  R3/R4: F1-F3 at 18 mm, solid core, open top, at Ø34 and Ø68. Head gain and area gain together.
+#      Slots stay as drawn at Ø68: group D measured the widened plate to be worth only 2.1 %.
+for bore, slot in ((17.0, 16.0), (34.0, 16.0)):
+    add("RS", "SEALED", 18, 4, 0, "open", core="solid", bore_mm=bore, slot_r_mm=slot,
+        why="sealed core, open top: how much head does breaking the hole-band tie actually give?")
+for grp, bore in (("R3", 17.0), ("R4", 34.0)):
+    for fid in ("F1", "F2", "F3"):
+        add(grp, fid, 18, 4, 0, "open", core="solid", bore_mm=bore, slot_r_mm=16.0,
+            why=f"sealed core, open top, bore r={bore:.0f} mm: head gain x area gain")
+
 # 1C  speed scaling check (Δp ~ U^1 vs U^2 regime) for one mid candidate
 for U in (2, 6):
     for top in ("capped", "open"):
