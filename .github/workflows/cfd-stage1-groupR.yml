@@ -1,0 +1,78 @@
+# Group R: seal the core and use the rotor's suction field as the exhaust.
+#
+# D1's rake measured 7.42 Pa between a deck-level intake (Cp +0.113, the only positive pressure
+# anywhere on the body) and the rotor's suction field (Cp -0.660). The bed receives 1.62 Pa of
+# that - 22%. The perforated core is why: circulation through the hole band pins the bore at an
+# intermediate -2.99 Pa, so the bed never sees the full drop. An unperforated tube breaks that
+# tie and the path becomes deck -> bed -> bore -> top exhaust.
+#
+# The rotor then generates suction only; particles enter with the air at deck level instead of
+# through the blades. That is a real departure from the as-drawn concept and was accepted
+# deliberately.
+#
+# RS  sealed bed, solid core, open top, at both bore sizes. Measures the head the sealed core
+#     actually delivers - the number the whole proposal rests on. If dp_bed does not rise well
+#     above 1.62 Pa here, the rest of the group does not matter.
+# R3  F1-F3, 18 mm, solid core, open top, bore Ø34.
+# R4  the same at bore Ø68, so the head gain and the area gain compound.
+#     Slots stay as drawn: group D measured the widened plate worth only 2.1%.
+#
+# Expect the outletFilter flow to be NEGATIVE here (air entering at the slots), and the top
+# opening to carry the exhaust. 8 cases, all in parallel, coarse mesh, serial solver.
+name: cfd-stage1-groupR
+on:
+  workflow_dispatch:
+env:
+  ROOT: cvwt-upload-to-github/cfd/stage1
+jobs:
+  screen:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+    strategy:
+      fail-fast: false          # one bad case must not cancel the other fifteen
+      max-parallel: 8
+      matrix:
+        case:
+          - RS_SEALED_t18_U4_az000_open_solid_medium
+          - RS_SEALED_t18_U4_az000_open_solid_medium_b34s16
+          - R3_F1_t18_U4_az000_open_solid_medium
+          - R3_F2_t18_U4_az000_open_solid_medium
+          - R3_F3_t18_U4_az000_open_solid_medium
+          - R4_F1_t18_U4_az000_open_solid_medium_b34s16
+          - R4_F2_t18_U4_az000_open_solid_medium_b34s16
+          - R4_F3_t18_U4_az000_open_solid_medium_b34s16
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install OpenFOAM 12
+        run: |
+          sudo sh -c "wget -qO - https://dl.openfoam.org/gpg.key > /etc/apt/trusted.gpg.d/openfoam.asc"
+          sudo add-apt-repository -y http://dl.openfoam.org/ubuntu
+          sudo apt-get update -qq && sudo apt-get install -y openfoam12
+      - name: Mesh and solve ${{ matrix.case }}
+        run: |
+          set +e
+          source /opt/openfoam12/etc/bashrc
+          set -e
+          python3 make_sweep.py --create --only=${{ matrix.case }}
+          cd runs/${{ matrix.case }}
+          # screening mesh: drop every refinement level by one (medium -> coarse), ~0.6 M cells
+          foamDictionary system/caseParams -entry LVL   -set 4
+          foamDictionary system/caseParams -entry LVL_1 -set 3
+          foamDictionary system/caseParams -entry LVL_2 -set 2
+          foamDictionary system/caseParams -entry LVL_3 -set 1
+          foamDictionary system/controlDict -entry endTime -set 1500
+          chmod +x Allrun && ./Allrun --run
+        working-directory: ${{ env.ROOT }}/sweep
+      - name: Summary and acceptance gates
+        if: always()
+        run: python3 summarize_run.py runs/${{ matrix.case }} || true
+        working-directory: ${{ env.ROOT }}/sweep
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: groupR-${{ matrix.case }}
+          path: |
+            cvwt-upload-to-github/cfd/stage1/sweep/runs/*/log.*
+            cvwt-upload-to-github/cfd/stage1/sweep/runs/*/run_summary.json
+            cvwt-upload-to-github/cfd/stage1/sweep/runs/*/postProcessing/**
+          retention-days: 30
