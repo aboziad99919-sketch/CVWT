@@ -40,7 +40,7 @@ def dat(case, name):
 
 def probes(case):
     fs = sorted(glob.glob(os.path.join(case, "postProcessing", "probes", "*", "p")))
-    return read_cols(fs[-1], list(range(1, 9))) if fs else []   # eight probes, not seven
+    return read_cols(fs[-1], list(range(1, 9))) if fs else []   # the first eight; the rest are the external rake
 
 def params(case):
     """Case parameters. run_summary.json is what the artifacts actually carry; case_params.json is
@@ -96,12 +96,17 @@ for c in cases:
     name = os.path.basename(c)
     par = params(c)
     U = float(par.get("U_mps", 4)); q = 0.5 * RHO * U * U          # Pa, pressure scale
+    # Flow scale. The F0 empty-housing case is the natural reference, but the only F0 cases are at
+    # rig scale, so a full-scale case (x12 geometry, ~55x the flow) was being judged against a
+    # reference 55x too small and read as wildly unsteady. Take whichever is larger: the case's own
+    # flow, or the F0 reference. A sealed case then still uses F0 rather than its own ~1e-8 noise.
     qref = f0.get(U) or 1e-4                                        # m3/s, flow scale
 
     rows = []
     wq = window(dat(c, "Q_outletFilter"))
     if wq:
         v = [x[0] for _, x in wq]
+        qref = max(qref, abs(statistics.fmean(v)))
         note = "" if par.get("filter") != "SEALED" else "  (sealed: zero by construction)"
         rows.append((stat(v, qref, "Q_outletFilter" + note), "m3/s"))
     wp = window(probes(c))
