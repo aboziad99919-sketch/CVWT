@@ -18,7 +18,7 @@ def k_omega(U, I=0.05, l=0.01, cmu=0.09):
 
 cases = []
 def add(group, fid, t_mm, U, az, top, mesh="medium", core="holes", why="", bed_z0=None,
-        bore_mm=17.0, slot_r_mm=16.0):
+        bore_mm=17.0, slot_r_mm=16.0, scale=1.0):
     """core: 'holes' = perforated cylinder (design as drawn); 'solid' = unperforated cylinder (reversed layout).
 
     bed_z0 fixes the bed BOTTOM [m]; the top then follows as bed_z0 + thickness. Left as None the bed
@@ -28,9 +28,11 @@ def add(group, fid, t_mm, U, az, top, mesh="medium", core="holes", why="", bed_z
     cid = f"{group}_{fid}_t{t_mm:02d}_U{U}_az{int(az*10):03d}_{top}_{core}_{mesh}"
     if abs(bore_mm - 17.0) > 1e-9 or abs(slot_r_mm - 16.0) > 1e-9:
         cid += f"_b{int(round(bore_mm))}s{int(round(slot_r_mm))}"
+    if abs(scale - 1.0) > 1e-9:
+        cid += f"_x{int(round(scale))}"
     cases.append(dict(case_id=cid, group=group, filter=fid, thickness_mm=t_mm, U_mps=U, azimuth_deg=az,
                       top=top, core=core, mesh=mesh, purpose=why, bed_z0=bed_z0,
-                      bore_mm=bore_mm, slot_r_mm=slot_r_mm))
+                      bore_mm=bore_mm, slot_r_mm=slot_r_mm, scale=scale))
 
 # 1A  map the core driving pressure (the key unknown of the pre-screen) - bed sealed or empty
 for az in (0, 22.5, 45, 67.5):
@@ -87,6 +89,19 @@ for grp, bore in (("R3", 17.0), ("R4", 34.0)):
         add(grp, fid, 18, 4, 0, "open", core="solid", bore_mm=bore, slot_r_mm=16.0,
             why=f"sealed core, open top, bore r={bore:.0f} mm: head gain x area gain")
 
+# 1FS full scale. Pressure does not scale: head = Cp x 0.5*rho*U^2, and U is 4 m/s at any size, so
+#     the ~6.4 Pa available is the same on a 0.31 m rig and a 3.68 m tower. What scales is the bed -
+#     thickness x12, area x144 - while the biochar grain stays 2 mm. A hand calculation says flow
+#     should go as L^1.1 and residence time as roughly L^2, giving ~405 L/min and ~17 s for F2.
+#     That calculation assumes the bed takes all the head and ignores the Reynolds change from
+#     30,000 to 360,000 at the rotor, so it is worth +-30% at best. These cases measure it.
+for grp, bore, S in (("FS", 34.0, 12.0),):
+    add(grp, "SEALED", 18, 4, 0, "open", core="solid", bore_mm=bore, slot_r_mm=16.0, scale=S,
+        why="full scale: is the available head really unchanged by size?")
+    for fid in ("F1", "F2", "F3"):
+        add(grp, fid, 18, 4, 0, "open", core="solid", bore_mm=bore, slot_r_mm=16.0, scale=S,
+            why="full scale sealed core: flow and residence time at 1:1")
+
 # 1C  speed scaling check (Δp ~ U^1 vs U^2 regime) for one mid candidate
 for U in (2, 6):
     for top in ("capped", "open"):
@@ -100,6 +115,40 @@ for U in (2, 6):
 # mesh independence on the baseline (medium is in B1)
 for mesh in ("coarse", "fine"):
     add("M1", "F2", 18, 4, 0, "capped", mesh, why="grid convergence (GCI) on baseline")
+
+
+COORD = re.compile(r"\(\s*(-?[\d.eE+-]+)\s+(-?[\d.eE+-]+)\s+(-?[\d.eE+-]+)\s*\)")
+RADIUS = re.compile(r"(\bradius\s+)([\d.eE+-]+)")
+
+def scale_triples(line, s):
+    """Multiply every (x y z) on the line, and any 'radius N', by s."""
+    line = COORD.sub(lambda m: "(%g %g %g)" % tuple(float(g) * s for g in m.groups()), line)
+    return RADIUS.sub(lambda m: m.group(1) + "%g" % (float(m.group(2)) * s), line)
+
+def scale_stl(path, s):
+    out = []
+    for line in open(path, errors="replace"):
+        f = line.split()
+        if f and f[0] == "vertex":
+            out.append("  vertex %.7e %.7e %.7e\n" % tuple(float(v) * s for v in f[1:4]))
+        else:
+            out.append(line)                       # normals are unit vectors; scaling must not touch them
+    open(path, "w").writelines(out)
+
+def apply_scale(dst, s):
+    """Geometric scale-up. Lengths scale; the biochar grain does NOT, so the Ergun coefficients
+    (D_COEFF, F_COEFF) are deliberately left alone - that is the whole physics of the question."""
+    for stl in (dst / "constant" / "geometry").glob("*.stl"):
+        scale_stl(stl, s)
+    bm = dst / "system" / "blockMeshDict"
+    bm.write_text(re.sub(r"convertToMeters\s+[\d.]+", "convertToMeters %g" % s, bm.read_text()))
+    sn = dst / "system" / "snappyHexMeshDict"
+    sn.write_text("\n".join(
+        scale_triples(l, s) if re.search(r"point1|point2|\bmin\b|\bmax\b|insidePoint|radius", l) else l
+        for l in sn.read_text().splitlines()) + "\n")
+    cd = dst / "system" / "controlDict"
+    txt = cd.read_text(); a = txt.index("probeLocations"); b = txt.index(");", a)
+    cd.write_text(txt[:a] + "\n".join(scale_triples(l, s) for l in txt[a:b].splitlines()) + txt[b:])
 
 def rotate_stl(src, dst, deg):
     th = math.radians(deg); c, s = math.cos(th), math.sin(th)
@@ -132,14 +181,17 @@ def create(case):
     rotate_stl(GEOM / "cvwt_fins.stl", g / "cvwt_fins.stl", case["azimuth_deg"])
     if case["filter"] == "SEALED": d, f = SEALED["d"], SEALED["f"]
     else: d, f = float(FILTERS[case["filter"]]["Darcy_d_1/m2"]), float(FILTERS[case["filter"]]["Forchheimer_f_1/m"])
-    k, om = k_omega(case["U_mps"]); L = LEVELS[case["mesh"]]
+    S = case.get("scale", 1.0)
+    k, om = k_omega(case["U_mps"], l=0.01 * S); L = LEVELS[case["mesh"]]
     subs = {"U_IN": case["U_mps"], "K_IN": f"{k:.6g}", "OMEGA_IN": f"{om:.6g}", "D_COEFF": f"{d:.6g}", "F_COEFF": f"{f:.6g}",
-            "FILTER_Z0": f"{(case['bed_z0'] if case.get('bed_z0') is not None else 0.045 - case['thickness_mm']/1000):.4f}",
-            "FILTER_Z1": f"{((case['bed_z0'] + case['thickness_mm']/1000) if case.get('bed_z0') is not None else 0.045):.4f}",
+            "FILTER_Z0": f"{S * (case['bed_z0'] if case.get('bed_z0') is not None else 0.045 - case['thickness_mm']/1000):.5f}",
+            "FILTER_Z1": f"{S * ((case['bed_z0'] + case['thickness_mm']/1000) if case.get('bed_z0') is not None else 0.045):.5f}",
             "FILTER_ID": case["filter"],
             # the porous cylinder is cut 0.2 mm oversize so it reaches the wall without leaving a gap
-            "BORE_R": f"{(case.get('bore_mm', 17.0) + 0.2)/1000:.4f}",
+            "BORE_R": f"{S * (case.get('bore_mm', 17.0) + 0.2)/1000:.5f}",
             "LVL": L, "LVL_1": L - 1, "LVL_2": L - 2, "LVL_3": L - 3, "NPROCS": 4}
+    if abs(S - 1.0) > 1e-9:
+        apply_scale(dst, S)
     for p in dst.rglob("*"):
         if p.is_file() and p.suffix != ".stl":
             t = p.read_text()
