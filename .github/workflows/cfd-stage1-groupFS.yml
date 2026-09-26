@@ -1,0 +1,73 @@
+# Group FS: the full-size CVWT, 3.68 m, at x12 the rig.
+#
+# Pressure does not scale. Head = Cp x 0.5*rho*U^2; Cp is a shape number and the wind is 4 m/s
+# at any size, so the ~6.4 Pa the sealed core delivers is the same on a 0.31 m rig and a 3.68 m
+# tower. What scales is the bed: thickness x12, area x144 - while the biochar grain stays the
+# same 1-4 mm. So the Ergun coefficients D_COEFF and F_COEFF are deliberately NOT scaled, and
+# the test suite fails if they ever are. That asymmetry is the entire physics of the question.
+#
+# A hand calculation predicts flow ~ L^1.1 and residence ~ L^2, i.e. about 405 L/min and 17 s
+# for F2 against 16.7 L/min and 0.24 s on the rig. It assumes the bed takes all the head and
+# ignores the rotor Reynolds number rising from 30,000 to 360,000, so it is worth +-30% at best.
+# These four cases replace it with measurement.
+#
+# Everything is scaled: the STL surfaces, blockMesh (via convertToMeters 12), snappy's
+# refinement boxes and insidePoint, the bed bounds, and all 20 probes. Cell count is unchanged,
+# so resolution relative to the body is preserved and each case costs about what the rig did.
+#
+# FS_SEALED is the one that matters first: if the head is NOT ~6.4 Pa, the Reynolds change has
+# moved Cp and every extrapolation in the plan needs revisiting.
+# 4 cases, all in parallel, coarse mesh, serial solver.
+name: cfd-stage1-groupFS
+on:
+  workflow_dispatch:
+env:
+  ROOT: cvwt-upload-to-github/cfd/stage1
+jobs:
+  screen:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+    strategy:
+      fail-fast: false          # one bad case must not cancel the other fifteen
+      max-parallel: 4
+      matrix:
+        case:
+          - FS_SEALED_t18_U4_az000_open_solid_medium_b34s16_x12
+          - FS_F1_t18_U4_az000_open_solid_medium_b34s16_x12
+          - FS_F2_t18_U4_az000_open_solid_medium_b34s16_x12
+          - FS_F3_t18_U4_az000_open_solid_medium_b34s16_x12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install OpenFOAM 12
+        run: |
+          sudo sh -c "wget -qO - https://dl.openfoam.org/gpg.key > /etc/apt/trusted.gpg.d/openfoam.asc"
+          sudo add-apt-repository -y http://dl.openfoam.org/ubuntu
+          sudo apt-get update -qq && sudo apt-get install -y openfoam12
+      - name: Mesh and solve ${{ matrix.case }}
+        run: |
+          set +e
+          source /opt/openfoam12/etc/bashrc
+          set -e
+          python3 make_sweep.py --create --only=${{ matrix.case }}
+          cd runs/${{ matrix.case }}
+          # screening mesh: drop every refinement level by one (medium -> coarse), ~0.6 M cells
+          foamDictionary system/caseParams -entry LVL   -set 4
+          foamDictionary system/caseParams -entry LVL_1 -set 3
+          foamDictionary system/caseParams -entry LVL_2 -set 2
+          foamDictionary system/caseParams -entry LVL_3 -set 1
+          foamDictionary system/controlDict -entry endTime -set 1500
+          chmod +x Allrun && ./Allrun --run
+        working-directory: ${{ env.ROOT }}/sweep
+      - name: Summary and acceptance gates
+        if: always()
+        run: python3 summarize_run.py runs/${{ matrix.case }} || true
+        working-directory: ${{ env.ROOT }}/sweep
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: groupFS-${{ matrix.case }}
+          path: |
+            cvwt-upload-to-github/cfd/stage1/sweep/runs/*/log.*
+            cvwt-upload-to-github/cfd/stage1/sweep/runs/*/run_summary.json
+            cvwt-upload-to-github/cfd/stage1/sweep/runs/*/postProcessing/**
+          retention-days: 30
