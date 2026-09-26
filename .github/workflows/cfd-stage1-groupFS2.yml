@@ -1,0 +1,95 @@
+# Group FS2: longer re-runs of the three full-scale cases that did not settle.
+#
+# Group FS established the headline - head across the bed is size-independent (6.589 Pa at 3.68 m
+# against 6.451 Pa on the rig, +2.1 %) - but after the stability checker's flow-reference bug was
+# fixed, three of the four cases were still moving at iteration 1500:
+#
+#   FS_F3      flow drift -4.97 %, flow band +-24.4 %   pressures steady    -> flow is NOT converged
+#   FS_F2      flow drift -0.84 %, pressure drift -1.22 %                   -> marginal
+#   FS_SEALED  pressure drift +1.43 %                                       -> marginal
+#
+# Full scale is genuinely less settled than the rig: Re on the rotor is 360,000 instead of 30,000,
+# so the shedding is stronger, and the same ~0.86 M cells now resolve a 3.68 m body instead of a
+# 307 mm one. Nothing is wrong with the cases; they just need more iterations.
+#
+# FS_SEALED matters most. The size-independence claim rests on its 6.589 Pa, and a 1.43 % drift sits
+# inside the 2.1 % difference that number is used to establish - true, but with no margin. This run
+# is what gives it margin.
+#
+# Nothing else changes: same geometry, same mesh settings, same coarse screening levels, same
+# D_COEFF / F_COEFF (the biochar grain does not scale - that asymmetry is the physics). Only
+# endTime moves. FS_F1 is not re-run; it converged at +0.08 %.
+#
+# Each case is written to runs/<case>_r3k or _r4k so its row sits beside the original FS row in
+# collect_results.py rather than overwriting it - the pair is the evidence that longer fixed it.
+#
+# Cost: 3 jobs in parallel. At the ~40 min the rig cases took for 1500 iterations on this mesh,
+# expect ~80 min for 3000 and ~110 min for 4000, plus ~10 min to install OpenFOAM and mesh.
+name: cfd-stage1-groupFS2
+on:
+  workflow_dispatch:
+env:
+  ROOT: cvwt-upload-to-github/cfd/stage1
+jobs:
+  rerun:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 350
+    strategy:
+      fail-fast: false          # one bad case must not cancel the others
+      max-parallel: 3
+      matrix:
+        include:
+          - case: FS_F3_t18_U4_az000_open_solid_medium_b34s16_x12
+            iters: 4000
+            tag: r4k
+          - case: FS_F2_t18_U4_az000_open_solid_medium_b34s16_x12
+            iters: 3000
+            tag: r3k
+          - case: FS_SEALED_t18_U4_az000_open_solid_medium_b34s16_x12
+            iters: 3000
+            tag: r3k
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install OpenFOAM 12
+        run: |
+          sudo sh -c "wget -qO - https://dl.openfoam.org/gpg.key > /etc/apt/trusted.gpg.d/openfoam.asc"
+          sudo add-apt-repository -y http://dl.openfoam.org/ubuntu
+          sudo apt-get update -qq && sudo apt-get install -y openfoam12
+      - name: Mesh and solve ${{ matrix.case }} for ${{ matrix.iters }} iterations
+        run: |
+          set +e
+          source /opt/openfoam12/etc/bashrc
+          set -e
+          python3 make_sweep.py --create --only=${{ matrix.case }}
+          # distinct directory so this row does not overwrite the 1500-iteration FS row
+          mv runs/${{ matrix.case }} runs/${{ matrix.case }}_${{ matrix.tag }}
+          cd runs/${{ matrix.case }}_${{ matrix.tag }}
+          # identical screening mesh to group FS: every refinement level dropped by one, ~0.86 M cells
+          foamDictionary system/caseParams -entry LVL   -set 4
+          foamDictionary system/caseParams -entry LVL_1 -set 3
+          foamDictionary system/caseParams -entry LVL_2 -set 2
+          foamDictionary system/caseParams -entry LVL_3 -set 1
+          # the only change from group FS
+          foamDictionary system/controlDict -entry endTime -set ${{ matrix.iters }}
+          chmod +x Allrun && ./Allrun --run
+        working-directory: ${{ env.ROOT }}/sweep
+      - name: Summary and acceptance gates
+        if: always()
+        run: python3 summarize_run.py runs/${{ matrix.case }}_${{ matrix.tag }} || true
+        working-directory: ${{ env.ROOT }}/sweep
+      - name: Quantity stability over the last 500 iterations
+        if: always()
+        # takes the runs ROOT, not a case dir - it globs the cases itself. Only one case exists in
+        # this job, so the F0 flow reference is absent and it falls back to the case's own mean;
+        # the authoritative scoring is the collect run, which sees every case at once.
+        run: python3 check_stability.py runs || true
+        working-directory: ${{ env.ROOT }}/sweep
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: groupFS2-${{ matrix.case }}-${{ matrix.tag }}
+          path: |
+            cvwt-upload-to-github/cfd/stage1/sweep/runs/*/log.*
+            cvwt-upload-to-github/cfd/stage1/sweep/runs/*/run_summary.json
+            cvwt-upload-to-github/cfd/stage1/sweep/runs/*/postProcessing/**
+          retention-days: 30
