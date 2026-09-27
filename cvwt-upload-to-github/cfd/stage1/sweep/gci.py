@@ -87,21 +87,48 @@ def observed_order(e21, e32, r21, r32):
 
 # --- find the triplet -----------------------------------------------------------------------
 # Suffixes written by cfd-stage1-groupM1.yml: _m1c coarse, _m1m medium, _m1f fine.
+SUFFIX = {"coarse": "m1c", "medium": "m1m", "fine": "m1f"}
 found = {}
 for c in sorted(glob.glob(os.path.join(RUNS, "*"))):
     if not os.path.isdir(c): continue
     b = os.path.basename(c)
     for suf, tag in (("_m1c", "coarse"), ("_m1m", "medium"), ("_m1f", "fine")):
         if b.endswith(suf): found[tag] = c
-missing = [t for t in ("coarse", "medium", "fine") if t not in found]
+# A leg whose solve failed still leaves a stub run_summary.json behind, because the workflow runs
+# summarize_run.py with "|| true" so a failure is still reported. Such a stub has no cell count, so
+# "present" has to mean "has a cell count", not "has a directory" - otherwise this reported a flat
+# "cell counts missing" and left you guessing which of the three legs was the problem.
+N = {t: cells(c) for t, c in found.items()}
+usable = {t: c for t, c in found.items() if N.get(t)}
+missing = [t for t in ("coarse", "medium", "fine") if t not in usable]
 if missing:
-    print(f"grid-convergence study incomplete - no case found for: {', '.join(missing)}")
-    print("Expected three directories under runs/ ending _m1c, _m1m and _m1f.")
+    print(f"grid-convergence study incomplete - no usable case for: {', '.join(missing)}")
+    for t in missing:
+        if t in found:
+            print(f"  {t}: {os.path.basename(found[t])} is present but has no cell count "
+                  f"- that leg failed before or during checkMesh")
+        else:
+            print(f"  {t}: no directory ending _{SUFFIX[t]} found under {RUNS}/")
+    if len(usable) >= 2:
+        print("\n  The legs that did run, for comparison (a GCI needs all three):\n")
+        print(f"  {'mesh':8s} {'cells':>10s}   " + "   ".join(f"{k:>18s}" for k in
+              ("Q_filter [L/min]", "dp_bed [Pa]", "Cp_core")))
+        order = [t for t in ("fine", "medium", "coarse") if t in usable]
+        vals = {t: quantities(usable[t]) for t in order}
+        for t in order:
+            row = "   ".join(f"{vals[t][k]:18.5g}" if vals[t].get(k) is not None else f"{'-':>18s}"
+                             for k in ("Q_filter [L/min]", "dp_bed [Pa]", "Cp_core"))
+            print(f"  {t:8s} {N[t]:10d}   {row}")
+        if len(order) == 2:
+            a, b = order
+            print(f"\n  change {b} -> {a}:")
+            for k in ("Q_filter [L/min]", "dp_bed [Pa]", "Cp_core"):
+                x, y = vals[b].get(k), vals[a].get(k)
+                if x and y:
+                    print(f"    {k:18s} {100*(y-x)/abs(x):+7.2f} %")
+            print("  Two meshes give a difference, not an order of accuracy and not a GCI.")
     sys.exit(0)
-
-N = {t: cells(found[t]) for t in found}
-if any(not N[t] for t in N):
-    print("cell counts missing from run_summary.json - cannot form a grid triplet"); sys.exit(1)
+found = usable
 # h is proportional to the cube root of the cell volume, so h ~ N^(-1/3)
 h = {t: N[t] ** (-1.0 / 3.0) for t in N}
 r21 = h["medium"] / h["fine"]        # fine -> medium
