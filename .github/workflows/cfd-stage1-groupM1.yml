@@ -38,16 +38,22 @@ env:
 jobs:
   mesh:
     runs-on: ubuntu-24.04
-    timeout-minutes: 350
+    timeout-minutes: 350          # the fine leg needs ~3 h serial; the others ~45 min
     strategy:
       fail-fast: false
       max-parallel: 3
       matrix:
         include:
+          # SERIAL, after two failed attempts under MPI (run #1: 4 vCPU but 2 physical cores, so
+          # OpenMPI refused -np 4; run #2: still exit 1 with a 5 KB artifact, i.e. it died around
+          # decomposePar, before meshing). The two serial legs passed first time, so the parallel
+          # path is the only variable and it is not worth more attempts to keep. 3.5 M cells serial
+          # for 1500 iterations is ~3 h - inside the 6 h job ceiling with margin - and using 1500
+          # here rather than 2000 makes the triplet uniform, which is better for a GCI anyway.
           - tag: m1f
             lvl: 5
-            iters: 2000
-            np: 4
+            iters: 1500
+            np: 1
           - tag: m1m
             lvl: 4
             iters: 1500
@@ -64,10 +70,22 @@ jobs:
           sudo add-apt-repository -y http://dl.openfoam.org/ubuntu
           sudo apt-get update -qq && sudo apt-get install -y openfoam12
       - name: Mesh and solve at level ${{ matrix.lvl }} (${{ matrix.tag }})
+        env:
+          # A GitHub runner reports 4 vCPU but only 2 physical CORES, and OpenMPI 4 maps by core by
+          # default - so "mpirun -np 4" is refused with "not enough slots available" within seconds
+          # of the job starting, which is exactly how the fine leg failed on run #1. These let it
+          # oversubscribe. The first is OpenMPI 4, the second PRRTE (OpenMPI 5); setting both is
+          # harmless and covers whichever the openfoam12 package pulls in.
+          OMPI_MCA_rmaps_base_oversubscribe: "true"
+          PRTE_MCA_rmaps_default_mapping_policy: ":oversubscribe"
         run: |
           set +e
           source /opt/openfoam12/etc/bashrc
           set -e
+          # Print the parallel environment BEFORE anything can fail, so a failed leg diagnoses
+          # itself instead of costing a round trip to ask for the log.
+          echo "nproc=$(nproc)  cores=$(lscpu -p=CORE 2>/dev/null | grep -vc '^#')  np=${{ matrix.np }}"
+          command -v mpirun && mpirun --version 2>&1 | head -2 || echo "mpirun NOT FOUND"
           python3 make_sweep.py --create --only=$CASE
           mv runs/$CASE runs/${CASE}_${{ matrix.tag }}
           cd runs/${CASE}_${{ matrix.tag }}
