@@ -18,7 +18,7 @@ Two things this gets right that a naive version does not:
    case carries Q ~ 1e-8 m3/s by construction; a percentage of that is noise about nothing. Pressures
    are scaled by the dynamic pressure 0.5*rho*U^2 and flows by the matching empty-housing (F0) flow.
 """
-import glob, json, os, statistics, sys
+import glob, json, os, re, statistics, sys
 
 RUNS = sys.argv[1] if len(sys.argv) > 1 else "runs"
 WINDOW = float(sys.argv[2]) if len(sys.argv) > 2 else 500.0
@@ -56,10 +56,34 @@ def params(case):
     return {}
 
 
-def window(rows):
+def window(rows, w=None):
     if not rows: return []
     t_end = rows[-1][0]
-    return [r for r in rows if r[0] > t_end - WINDOW]
+    return [r for r in rows if r[0] > t_end - (WINDOW if w is None else w)]
+
+def mean_stability(rows, scale, col=0):
+    """Is the WINDOW MEAN reproducible, or is the solution genuinely going somewhere?
+
+    A long-period oscillation defeats the drift test: the 500-iteration window lands on a
+    different phase of the wave each time it is taken, so 'drift' reports where on the wave you
+    happened to stop, not a trend. Group FS2 settled this by experiment - re-running FS_F3 to
+    4000 iterations made the reported drift WORSE (-4.97 % -> -14.27 %) while the window mean
+    moved 0.12 %. That is an oscillation, not a transient, and no number of extra iterations
+    removes it.
+
+    So take the mean over the last 500, 1000 and 1500 iterations. If those three means agree
+    within tolerance, the value is settled whatever the drift column says, and the honest
+    uncertainty is the peak-to-peak band - not a claim that the case failed.
+    Returns (spread of the means as % of the physical scale, list of the means) or None.
+    """
+    means = []
+    for w in (500.0, 1000.0, 1500.0):
+        v = [x[col] for _, x in window(rows, w)]
+        if len(v) < 5: break
+        means.append(statistics.fmean(v))
+    if len(means) < 2: return None
+    s = max(abs(scale), 1e-12)
+    return 100.0 * (max(means) - min(means)) / s, means
 
 def stat(vals, scale, label):
     """spread and drift as a percentage of a PHYSICAL scale, not of the values' own mean"""
@@ -78,6 +102,12 @@ def stat(vals, scale, label):
             "drift_pct": drift_pct, "band_pct": spread / 2.0,
             "converged": abs(drift_pct) < TOL_PCT}
 
+def verdict(rows, scale, col=0):
+    """One word per quantity, from the drift test and the mean-stability test together."""
+    ms = mean_stability(rows, scale, col)
+    if ms is None: return "", None
+    return ("settled" if ms[0] < TOL_PCT else "moving"), ms[0]
+
 # empty-housing flow per speed sets the scale that filter flows are judged against
 f0 = {}
 for c in sorted(glob.glob(os.path.join(RUNS, "*"))):
@@ -91,6 +121,7 @@ cases = sorted(d for d in glob.glob(os.path.join(RUNS, "*")) if os.path.isdir(d)
 if not cases: print(f"no case directories under {RUNS}/"); sys.exit(1)
 
 n_steady = n_total = 0
+MEANS = {}                      # case -> {quantity: window mean}, for the replication table
 print(f"Stability over the last {WINDOW:.0f} iterations (tolerance {TOL_PCT} % of the physical scale)\n")
 for c in cases:
     name = os.path.basename(c)
@@ -102,33 +133,86 @@ for c in cases:
     # flow, or the F0 reference. A sealed case then still uses F0 rather than its own ~1e-8 noise.
     qref = f0.get(U) or 1e-4                                        # m3/s, flow scale
 
-    rows = []
-    wq = window(dat(c, "Q_outletFilter"))
-    if wq:
-        v = [x[0] for _, x in wq]
-        qref = max(qref, abs(statistics.fmean(v)))
+    # Full series, not just the window: mean_stability needs to look further back than 500.
+    raw_q = dat(c, "Q_outletFilter")
+    raw_p = probes(c)
+    series = []                                     # (label, unit, [(t,[v])], scale)
+    if raw_q:
+        v0 = [x[0] for _, x in window(raw_q)]
+        if v0: qref = max(qref, abs(statistics.fmean(v0)))
         note = "" if par.get("filter") != "SEALED" else "  (sealed: zero by construction)"
-        rows.append((stat(v, qref, "Q_outletFilter" + note), "m3/s"))
-    wp = window(probes(c))
-    if wp:
-        P = [x for _, x in wp]
-        rows.append((stat([(p[0] - p[7]) / (0.5 * U * U) for p in P], 1.0, "Cp_core"), "-"))
-        rows.append((stat([(p[0] - p[6]) / (0.5 * U * U) for p in P], 1.0, "Cp_vs_plenum (old)"), "-"))
-        rows.append((stat([(p[3] - p[4]) * RHO for p in P], q, "dp_bed"), "Pa"))
-    rows = [(r, u) for r, u in rows if r]
+        series.append(("Q_outletFilter" + note, "m3/s", raw_q, qref))
+    if raw_p:
+        d = lambda fn: [(tt, [fn(pv)]) for tt, pv in raw_p]
+        series.append(("Cp_core", "-", d(lambda pv: (pv[0] - pv[7]) / (0.5 * U * U)), 1.0))
+        series.append(("Cp_vs_plenum (old)", "-", d(lambda pv: (pv[0] - pv[6]) / (0.5 * U * U)), 1.0))
+        series.append(("dp_bed", "Pa", d(lambda pv: (pv[3] - pv[4]) * RHO), q))
+
+    rows = []
+    for label, unit, ser, scale in series:
+        r = stat([x[0] for _, x in window(ser)], scale, label)
+        if not r: continue
+        ms = mean_stability(ser, scale)
+        r["mean_spread_pct"] = None if ms is None else ms[0]
+        r["mean_settled"] = None if ms is None else ms[0] < TOL_PCT
+        rows.append((r, unit))
     if not rows:
         print(f"{name}: no usable time series (postProcessing missing from the artifact)"); continue
 
-    ok = all(r["converged"] for r, _ in rows)
-    n_total += 1; n_steady += ok
-    print(f"{name}   -> {'CONVERGED' if ok else 'STILL DRIFTING'}   (U={U} m/s, scales: {q:.2f} Pa, {qref:.3e} m3/s)")
-    print(f"  {'quantity':34s} {'n':>4s} {'mean':>12s} {'band +-%':>9s} {'drift %':>8s}  converged")
+    MEANS[name] = {r["label"].split("  (")[0]: r["mean"] for r, _ in rows}
+    drift_ok = all(r["converged"] for r, _ in rows)
+    # A quantity whose 500/1000/1500-iteration means agree is settled even if the drift column does
+    # not pass: that is a long-period oscillation, and group FS2 proved by experiment that more
+    # iterations make the drift number worse while leaving the mean alone.
+    mean_ok = all(r["mean_settled"] is not False for r, _ in rows) \
+              and any(r["mean_settled"] for r, _ in rows)
+    tag = "CONVERGED" if drift_ok else ("SETTLED (oscillating)" if mean_ok else "STILL DRIFTING")
+    n_total += 1; n_steady += (drift_ok or mean_ok)
+    print(f"{name}   -> {tag}   (U={U} m/s, scales: {q:.2f} Pa, {qref:.3e} m3/s)")
+    print(f"  {'quantity':34s} {'n':>4s} {'mean':>12s} {'band +-%':>9s} {'drift %':>8s} {'mean var%':>9s}  settled")
     for r, u in rows:
+        mv = "     -   " if r["mean_spread_pct"] is None else f"{r['mean_spread_pct']:9.3f}"
+        state = "yes" if r["converged"] else ("osc" if r["mean_settled"] else "NO")
         print(f"  {r['label']:34s} {r['n']:4d} {r['mean']:12.5g} {r['band_pct']:9.2f} "
-              f"{r['drift_pct']:8.3f}  {'yes' if r['converged'] else 'NO'}")
+              f"{r['drift_pct']:8.3f} {mv}  {state}")
     print()
 
-print(f"{n_steady}/{n_total} case(s) converged: no quantity drifts by more than {TOL_PCT} % over the window.")
+print(f"{n_steady}/{n_total} case(s) settled: every quantity either drifts less than {TOL_PCT} % over the")
+print(f"window, or its 500/1000/1500-iteration means agree within {TOL_PCT} % - the second is a long-period")
+print("oscillation, which extra iterations do not remove (group FS2 tested this and the drift got worse")
+print("while the mean moved 0.12 %). 'osc' in the settled column marks that case.")
 print("'band' is half the peak-to-peak oscillation and is the uncertainty to quote with each value.")
 print("Percentages are of the physical scale (dynamic pressure, empty-housing flow), so a sealed")
 print("case with no through-flow reads sensibly rather than as thousands of percent of nothing.")
+
+
+# ---- replication: the same case re-run for longer -------------------------------------------
+# A case run to more iterations is an INDEPENDENT estimate of the same quantity. If the two window
+# means agree, the value is right whatever the drift column says, and their difference is a better
+# uncertainty than any single-run statistic - it is the one number that accounts for the long-period
+# unsteadiness a steady solver cannot resolve. Suffixes _r3k / _r4k mark a longer re-run of the
+# case whose name they follow.
+SUF = re.compile(r"_r\d+k$")
+pairs = {}
+for name in MEANS:
+    base = SUF.sub("", name)
+    if base != name and base in MEANS:
+        pairs[base] = name
+if pairs:
+    print("Replication: base case vs longer re-run (independent estimates of the same quantity)\n")
+    worst = 0.0
+    print(f"  {'case / quantity':44s} {'base':>12s} {'re-run':>12s} {'diff %':>8s}")
+    for base, longer in sorted(pairs.items()):
+        print(f"  {base[:44]:44s}")
+        for k, a in MEANS[base].items():
+            b = MEANS[longer].get(k)
+            if b is None or abs(a) < 1e-12: continue
+            d = 100.0 * (b - a) / abs(a)
+            if abs(a) > 1e-7:                      # skip sealed-case flow noise about zero
+                worst = max(worst, abs(d))
+            print(f"    {k:42s} {a:12.5g} {b:12.5g} {d:+8.2f}")
+    print(f"\n  worst replication difference: {worst:.2f} %")
+    print("  Read this against the drift column. Where a case reads STILL DRIFTING but replicates to")
+    print("  well under 1 %, the solution is oscillating about a settled mean, not still moving: two")
+    print("  independent runs cannot agree by accident. Quote the mean with the band, and note that")
+    print("  resolving the oscillation itself needs a transient (URANS) run, not more iterations.")
