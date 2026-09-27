@@ -152,6 +152,7 @@ if not keys:
 print(f"  {'quantity':18s} {'fine':>11s} {'medium':>11s} {'coarse':>11s} {'p':>6s} "
       f"{'extrap.':>11s} {'GCI fine':>9s}  verdict")
 worst = 0.0
+worst_spread = 0.0
 for k in keys:
     f1, f2, f3 = Q["fine"][k], Q["medium"][k], Q["coarse"][k]
     e21, e32 = f2 - f1, f3 - f2
@@ -168,18 +169,27 @@ for k in keys:
         print(f"  {k:18s} {f1:11.5g} {f2:11.5g} {f3:11.5g} {'-':>6s} {'-':>11s} {'-':>9s}"
               "  no real order - not in the asymptotic range")
         continue
+    if s <= 0:
+        # Oscillatory: p, the extrapolated value and the GCI are all meaningless, so none is printed.
+        # The uncertainty is half the range of the three solutions, as a percentage of the fine value.
+        # This used to fall out of the headline entirely, which printed "worst GCI 0.00 %" when
+        # every quantity was oscillatory and the real mesh uncertainty was ~3 %.
+        spread = 0.5 * (max(f1, f2, f3) - min(f1, f2, f3)) / abs(f1) * 100.0 if f1 else float("nan")
+        worst_spread = max(worst_spread, spread)
+        print(f"  {k:18s} {f1:11.5g} {f2:11.5g} {f3:11.5g} {'-':>6s} {'-':>11s} "
+              f"{spread:7.2f}*%  OSCILLATORY in mesh space - * = half the spread of the three, not a GCI")
+        continue
     ext = (r21 ** p * f1 - f2) / (r21 ** p - 1.0)
     ea = abs((f1 - f2) / f1) if f1 else float("nan")
     gci = FS * ea / (r21 ** p - 1.0) * 100.0
-    if s > 0:
-        worst = max(worst, gci)
-        note = "monotone" if 0.5 <= p <= 3.0 else f"p={p:.2f} outside 0.5-3, treat GCI as indicative"
-    else:
-        note = "OSCILLATORY in mesh space - GCI not valid, use the spread of the three"
+    worst = max(worst, gci)
+    note = "monotone" if 0.5 <= p <= 3.0 else f"p={p:.2f} outside 0.5-3, treat GCI as indicative"
     print(f"  {k:18s} {f1:11.5g} {f2:11.5g} {f3:11.5g} {p:6.2f} {ext:11.5g} "
           f"{gci:8.2f} %  {note}")
 
-print(f"\n  worst GCI on the fine mesh, monotone quantities only: {worst:.2f} %")
+print(f"\n  mesh uncertainty on the fine mesh (worst quantity):")
+print(f"    GCI, monotone quantities:            " + (f"{worst:.2f} %" if worst > 0 else "none monotone"))
+print(f"    half-spread, oscillatory quantities: " + (f"{worst_spread:.2f} %" if worst_spread > 0 else "none oscillatory"))
 print("  This is the DISCRETISATION uncertainty. It is separate from, and adds to, the")
 print("  oscillation band that check_stability.py reports and the 0.43 % replication spread.")
 print("  A study is normally considered mesh-independent at a few percent; above ~10 % the")
