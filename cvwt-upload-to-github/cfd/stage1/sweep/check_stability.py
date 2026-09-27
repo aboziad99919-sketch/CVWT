@@ -76,8 +76,17 @@ def mean_stability(rows, scale, col=0):
     uncertainty is the peak-to-peak band - not a claim that the case failed.
     Returns (spread of the means as % of the physical scale, list of the means) or None.
     """
+    # A window only measures the settled part if the run is comfortably longer than it. On a
+    # 1500-iteration run the 1500 window reaches back to iteration 1 and swallows the startup
+    # transient, which is why the base FS cases first reported 2-6 % "mean variation" while their
+    # own longer re-runs reported 0.05-0.5 %. That was the test grading the transient, not the
+    # solution. So only use windows no longer than half the run, and report nothing if fewer than
+    # two survive - a short run cannot assess itself this way, and its evidence has to come from a
+    # replicate instead.
+    span = rows[-1][0] - rows[0][0]
     means = []
     for w in (500.0, 1000.0, 1500.0):
+        if w > span / 2.0: break
         v = [x[col] for _, x in window(rows, w)]
         if len(v) < 5: break
         means.append(statistics.fmean(v))
@@ -122,6 +131,7 @@ if not cases: print(f"no case directories under {RUNS}/"); sys.exit(1)
 
 n_steady = n_total = 0
 MEANS = {}                      # case -> {quantity: window mean}, for the replication table
+GATES = {}                      # case -> {quantity: does it count?}, so noise stays out of the headline
 print(f"Stability over the last {WINDOW:.0f} iterations (tolerance {TOL_PCT} % of the physical scale)\n")
 for c in cases:
     name = os.path.basename(c)
@@ -140,39 +150,47 @@ for c in cases:
     if raw_q:
         v0 = [x[0] for _, x in window(raw_q)]
         if v0: qref = max(qref, abs(statistics.fmean(v0)))
-        note = "" if par.get("filter") != "SEALED" else "  (sealed: zero by construction)"
-        series.append(("Q_outletFilter" + note, "m3/s", raw_q, qref))
+        sealed = par.get("filter") == "SEALED"
+        note = "" if not sealed else "  (sealed: zero by construction)"
+        series.append(("Q_outletFilter" + note, "m3/s", raw_q, qref, sealed))
     if raw_p:
         d = lambda fn: [(tt, [fn(pv)]) for tt, pv in raw_p]
-        series.append(("Cp_core", "-", d(lambda pv: (pv[0] - pv[7]) / (0.5 * U * U)), 1.0))
-        series.append(("Cp_vs_plenum (old)", "-", d(lambda pv: (pv[0] - pv[6]) / (0.5 * U * U)), 1.0))
-        series.append(("dp_bed", "Pa", d(lambda pv: (pv[3] - pv[4]) * RHO), q))
+        series.append(("Cp_core", "-", d(lambda pv: (pv[0] - pv[7]) / (0.5 * U * U)), 1.0, False))
+        series.append(("Cp_vs_plenum (old)", "-", d(lambda pv: (pv[0] - pv[6]) / (0.5 * U * U)), 1.0, False))
+        series.append(("dp_bed", "Pa", d(lambda pv: (pv[3] - pv[4]) * RHO), q, False))
 
     rows = []
-    for label, unit, ser, scale in series:
+    for label, unit, ser, scale, skip in series:
         r = stat([x[0] for _, x in window(ser)], scale, label)
         if not r: continue
         ms = mean_stability(ser, scale)
         r["mean_spread_pct"] = None if ms is None else ms[0]
         r["mean_settled"] = None if ms is None else ms[0] < TOL_PCT
+        # A sealed case carries no through-flow by construction, so its flow series is numerical
+        # noise about zero. It is printed for inspection but must not decide whether the case is
+        # settled - in a sealed case the PRESSURES are the result.
+        r["gates"] = not skip
         rows.append((r, unit))
     if not rows:
         print(f"{name}: no usable time series (postProcessing missing from the artifact)"); continue
 
     MEANS[name] = {r["label"].split("  (")[0]: r["mean"] for r, _ in rows}
-    drift_ok = all(r["converged"] for r, _ in rows)
+    GATES[name] = {r["label"].split("  (")[0]: r["gates"] for r, _ in rows}
+    gating = [r for r, _ in rows if r["gates"]] or [r for r, _ in rows]
+    drift_ok = all(r["converged"] for r in gating)
     # A quantity whose 500/1000/1500-iteration means agree is settled even if the drift column does
     # not pass: that is a long-period oscillation, and group FS2 proved by experiment that more
     # iterations make the drift number worse while leaving the mean alone.
-    mean_ok = all(r["mean_settled"] is not False for r, _ in rows) \
-              and any(r["mean_settled"] for r, _ in rows)
+    mean_ok = all(r["mean_settled"] is not False for r in gating) \
+              and any(r["mean_settled"] for r in gating)
     tag = "CONVERGED" if drift_ok else ("SETTLED (oscillating)" if mean_ok else "STILL DRIFTING")
     n_total += 1; n_steady += (drift_ok or mean_ok)
     print(f"{name}   -> {tag}   (U={U} m/s, scales: {q:.2f} Pa, {qref:.3e} m3/s)")
     print(f"  {'quantity':34s} {'n':>4s} {'mean':>12s} {'band +-%':>9s} {'drift %':>8s} {'mean var%':>9s}  settled")
     for r, u in rows:
         mv = "     -   " if r["mean_spread_pct"] is None else f"{r['mean_spread_pct']:9.3f}"
-        state = "yes" if r["converged"] else ("osc" if r["mean_settled"] else "NO")
+        state = ("n/a" if not r["gates"] else
+                 "yes" if r["converged"] else "osc" if r["mean_settled"] else "NO")
         print(f"  {r['label']:34s} {r['n']:4d} {r['mean']:12.5g} {r['band_pct']:9.2f} "
               f"{r['drift_pct']:8.3f} {mv}  {state}")
     print()
@@ -208,9 +226,12 @@ if pairs:
             b = MEANS[longer].get(k)
             if b is None or abs(a) < 1e-12: continue
             d = 100.0 * (b - a) / abs(a)
-            if abs(a) > 1e-7:                      # skip sealed-case flow noise about zero
-                worst = max(worst, abs(d))
-            print(f"    {k:42s} {a:12.5g} {b:12.5g} {d:+8.2f}")
+            # A sealed case's flow is zero by construction, so the ratio of two near-zero numbers is
+            # meaningless - it read +285 % on a difference of 2e-5 m3/s. Print it, flag it, and keep
+            # it out of the headline figure.
+            noise = not GATES.get(base, {}).get(k, True)
+            if not noise: worst = max(worst, abs(d))
+            print(f"    {k:42s} {a:12.5g} {b:12.5g} {d:+8.2f}" + ("   (noise about zero)" if noise else ""))
     print(f"\n  worst replication difference: {worst:.2f} %")
     print("  Read this against the drift column. Where a case reads STILL DRIFTING but replicates to")
     print("  well under 1 %, the solution is oscillating about a settled mean, not still moving: two")
