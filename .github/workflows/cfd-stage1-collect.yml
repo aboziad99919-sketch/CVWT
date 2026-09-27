@@ -32,7 +32,11 @@ jobs:
           if [ -z "$(echo "$RUN_IDS" | tr -d '[:space:]')" ]; then
             # No IDs given: take the most recent successful run of each stage-1 sweep workflow.
             RUN_IDS=""
-            for wf in cfd-stage1-groupA.yml cfd-stage1-groupA-open.yml cfd-stage1-groupB.yml cfd-stage1-groupD.yml cfd-stage1-groupR.yml; do
+            # Enumerate the sweep workflows from the checkout instead of hard-coding them. The old
+            # hard-coded list silently skipped any group added later - groupFS2 ran, produced three
+            # good artifacts, and collect reported 42 cases as though nothing had happened. A group
+            # that never ran successfully just yields no run id and is skipped.
+            for wf in $(ls .github/workflows/cfd-stage1-group*.yml | xargs -n1 basename); do
               id=$(gh run list -R "$GITHUB_REPOSITORY" -w "$wf" -s success -L 1 --json databaseId -q '.[0].databaseId' 2>/dev/null || true)
               [ -n "$id" ] && RUN_IDS="$RUN_IDS $id"
             done

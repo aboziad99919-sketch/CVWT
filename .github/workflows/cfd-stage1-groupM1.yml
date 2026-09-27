@@ -10,11 +10,15 @@
 # snappyHexMesh level dropped by one between them, so the cell size doubles each step and the
 # refinement ratio is a clean ~2:
 #
-#   m1c  coarse  levels 3/2/1/0   ~0.1 M cells   serial
-#   m1m  medium  levels 4/3/2/1   ~0.86 M cells  serial   <- identical to every other run so far,
+#   m1c  coarse  levels 3/2/1/0   ~0.18 M cells  serial
+#   m1m  medium  levels 4/3/2/1   0.864 M cells  serial   <- identical to every other run so far,
 #                                                            so it doubles as a reproducibility check
-#                                                            against R4_F2 itself
-#   m1f  fine    levels 5/4/3/2   ~3.5 M cells   4-way MPI <- the plan's intended mesh, run at last
+#                                                            against R4_F2 itself (it passed: it
+#                                                            reproduced R4_F2 digit for digit)
+#   m1f  fine    levels 5/4/3/2   4.144 M cells  4-way MPI <- the plan's intended mesh, run at last
+#
+# Measured cell ratio fine:medium is 4.80, so h falls by 1.687 per level - not 2, because only the
+# refined regions change. gci.py takes the ratio from the cell counts, so this is handled.
 #
 # R4_F2 is the right case for this: its core is UNPERFORATED, so there are no 5 mm holes that the
 # coarse mesh would fail to resolve at all. The bed and the 6 mm outlet slots are the features that
@@ -44,16 +48,21 @@ jobs:
       max-parallel: 3
       matrix:
         include:
-          # SERIAL, after two failed attempts under MPI (run #1: 4 vCPU but 2 physical cores, so
-          # OpenMPI refused -np 4; run #2: still exit 1 with a 5 KB artifact, i.e. it died around
-          # decomposePar, before meshing). The two serial legs passed first time, so the parallel
-          # path is the only variable and it is not worth more attempts to keep. 3.5 M cells serial
-          # for 1500 iterations is ~3 h - inside the 6 h job ceiling with margin - and using 1500
-          # here rather than 2000 makes the triplet uniform, which is better for a GCI anyway.
+          # The fine leg is 4,144,355 cells - 4.8x the medium mesh, not the ~3.5 M the plan
+          # estimated. Serial it did NOT finish 1500 iterations in 5 h 48 m, so serial is 6-9 h and
+          # cannot fit the 6 h job ceiling. Four ranks brings it to ~2 h, so MPI has to work.
+          #
+          # The diagnostics finally said why it did not: nproc=4, cores=4, OpenMPI 4.1.6 present.
+          # So it was never oversubscription - the earlier failures were decomposePar itself, and
+          # the remaining suspect is "method scotch", whose library the openfoam12 package does not
+          # reliably carry. This leg now writes its own decomposeParDict using HIERARCHICAL
+          # decomposition, which is built into OpenFOAM and needs no external library. If that
+          # still fails, the step falls back to serial at 600 iterations rather than burning the
+          # whole 6 h ceiling for nothing.
           - tag: m1f
             lvl: 5
             iters: 1500
-            np: 1
+            np: 4
           - tag: m1m
             lvl: 4
             iters: 1500
@@ -95,8 +104,46 @@ jobs:
           foamDictionary system/caseParams -entry LVL_2 -set $(( ${{ matrix.lvl }} - 2 ))
           foamDictionary system/caseParams -entry LVL_3 -set $(( ${{ matrix.lvl }} - 3 ))
           foamDictionary system/controlDict -entry endTime -set ${{ matrix.iters }}
-          chmod +x Allrun && ./Allrun --run ${{ matrix.np }}
+          chmod +x Allrun
+          if [ "${{ matrix.np }}" -gt 1 ]; then
+            # Written whole rather than edited: scotch needs a library the package may not carry,
+            # hierarchical is built in. Both coeff spellings are given because OpenFOAM renamed the
+            # dictionary between versions and ignores whichever it does not read.
+            cat > system/decomposeParDict <<'DPD'
+            FoamFile { format ascii; class dictionary; object decomposeParDict; }
+            numberOfSubdomains ${{ matrix.np }};
+            method             hierarchical;
+            coeffs             { n (2 2 1); delta 0.001; order xyz; }
+            hierarchicalCoeffs { n (2 2 1); delta 0.001; order xyz; }
+          DPD
+            # keep a pristine copy so a failed parallel attempt can retry serially
+            cp -r . ../fallback_${{ matrix.tag }}
+          fi
+          set +e
+          ./Allrun --run ${{ matrix.np }}
+          rc=$?
+          set -e
+          if [ $rc -ne 0 ] && [ "${{ matrix.np }}" -gt 1 ]; then
+            echo "::warning::parallel run failed (rc=$rc); falling back to serial at 600 iterations"
+            for l in log.decomposePar log.snappyHexMesh log.foamRun; do
+              [ -f "$l" ] && { echo "---- tail of $l ----"; tail -25 "$l"; }
+            done
+            cd ..
+            rm -rf ${CASE}_${{ matrix.tag }}
+            mv fallback_${{ matrix.tag }} ${CASE}_${{ matrix.tag }}
+            cd ${CASE}_${{ matrix.tag }}
+            # 600 iterations is what fits serially; check_stability.py will say whether it settled
+            foamDictionary system/controlDict -entry endTime -set 600
+            ./Allrun --run 1
+          elif [ $rc -ne 0 ]; then
+            exit $rc
+          else
+            rm -rf ../fallback_${{ matrix.tag }}
+          fi
           grep -m1 -E "^\s*cells:" log.checkMesh || true
+          # checkMesh reported failed checks on the level-5 mesh; say WHICH, so it is a finding
+          # rather than a warning nobody can act on.
+          grep -B2 -A6 "Failed.*mesh checks" log.checkMesh || echo "checkMesh: no failed checks"
         working-directory: ${{ env.ROOT }}/sweep
       - name: Summary and acceptance gates
         if: always()
