@@ -65,11 +65,14 @@ if p:
     r["probe_p_m2s2"] = dict(zip(PROBE_NAMES, p))
     rho = 1.2; r["dp_bed_Pa"] = (p[3] - p[4]) * rho
     U = float(r["params"]["U_mps"])
-    r["Cp_core_at_holes"] = (p[0] - p[FREESTREAM]) / (0.5 * U**2)   # bore vs true freestream
-    r["Cp_core_vs_plenum"] = (p[0] - p[6]) / (0.5 * U**2)           # the old quantity, kept for comparison
-    # Cp on the external rake: an intake is only usable where this is near zero.
-    r["Cp_external"] = {n: round((v - p[FREESTREAM]) / (0.5 * U**2), 4)
-                        for n, v in zip(PROBE_NAMES, p) if n.startswith("ext_")}
+    # A short probe list must not crash the summary: the workflows run this with '|| true', so a
+    # crash here would silently leave the case with no summary at all. probe_warning says why.
+    if len(p) > FREESTREAM:
+        r["Cp_core_at_holes"] = (p[0] - p[FREESTREAM]) / (0.5 * U**2)   # bore vs true freestream
+        r["Cp_core_vs_plenum"] = (p[0] - p[6]) / (0.5 * U**2)           # the old quantity, kept for comparison
+        # Cp on the external rake: an intake is only usable where this is near zero.
+        r["Cp_external"] = {n: round((v - p[FREESTREAM]) / (0.5 * U**2), 4)
+                            for n, v in zip(PROBE_NAMES, p) if n.startswith("ext_")}
 r["gates"] = {"mesh_quality": bool(r["mesh"].get("mesh_ok") and not r["mesh"].get("failed_checks")),
               "convergence": bool(r["convergence"].get("converged")),
               "conservation": (r["mass_imbalance_rel"] if r.get("mass_imbalance_rel") is not None else 1) < 1e-3}

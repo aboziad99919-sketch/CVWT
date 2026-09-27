@@ -48,13 +48,18 @@ class TestSummariser(unittest.TestCase):
     def test_healthy_run_passes_every_gate(self):
         self.write(CHECKMESH_OK, solver_log("converged"),
                    flows={"inlet": -2.4, "outlet": 2.39995, "outletFilter": 5e-5},
-                   probe=[2.4, -1.0, 1.8, 1.6, 0.2, 0.3, 0.0])
+                   probe=[2.4, -1.0, 1.8, 1.6, 0.2, 0.3, 0.0, 0.0])   # 8 core probes; [7] = freestream
         r = self.run_summary()
         self.assertEqual(r["overall"], "PASS")
         self.assertTrue(r["gates"]["convergence"]); self.assertTrue(r["gates"]["mesh_quality"])
         self.assertAlmostEqual(r["Q_filter_Lpm"], 3.0, places=6)          # 5e-5 m3/s = 3 L/min
         self.assertAlmostEqual(r["dp_bed_Pa"], (1.6 - 0.2) * 1.2, places=6)
         self.assertAlmostEqual(r["Cp_core_at_holes"], 2.4 / (0.5 * 16), places=6)
+    def test_short_probe_list_warns_instead_of_crashing(self):
+        self.write(CHECKMESH_OK, solver_log("converged"), probe=[2.4, -1.0, 1.8, 1.6, 0.2, 0.3, 0.0])
+        r = self.run_summary()
+        self.assertIn("probe_warning", r); self.assertNotIn("Cp_core_at_holes", r)
+        self.assertAlmostEqual(r["dp_bed_Pa"], (1.6 - 0.2) * 1.2, places=6)
     def test_failed_checkmesh_is_not_a_pass(self):
         self.write(CHECKMESH_BAD, solver_log("converged"))
         r = self.run_summary(); self.assertFalse(r["gates"]["mesh_quality"]); self.assertEqual(r["overall"], "REVIEW")
