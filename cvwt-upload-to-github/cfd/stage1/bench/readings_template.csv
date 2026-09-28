@@ -1,0 +1,48 @@
+# CVWT biochar bench test - readings. Fill one row per reading; leave unused rows empty.
+# Lines starting with # are header values: 'key = value'. Units are in the names.
+# sample = biochar batch ___ , sieved ___-___ mm, date ___
+# column_ID_mm = 80           # inner diameter of the test column
+# tap_spacing_mm = 100        # distance between the two pressure taps inside the bed
+# bed_height_mm = 160         # packed height (taps 30 mm in from each end)
+# bed_mass_g =                # biochar mass in the column
+# bulk_density_kg_m3 =        # bed_mass / (column area x bed height)
+# particle_density_kg_m3 =    # from supplier or pycnometer (optional, for porosity)
+# d_p_mm =                    # mean sieve size (optional, for Reynolds number and the wall check)
+# moisture_pct =              # after conditioning
+run,target_V_mm_s,flow_Lpm,dp_Pa,dp_blank_Pa,T_C,p_kPa,note
+1,2,,,,,,target flow 0.60 L/min
+1,3,,,,,,target flow 0.90 L/min
+1,5,,,,,,target flow 1.51 L/min
+1,8,,,,,,target flow 2.41 L/min
+1,12,,,,,,target flow 3.62 L/min
+1,20,,,,,,target flow 6.03 L/min
+1,30,,,,,,target flow 9.05 L/min
+1,50,,,,,,target flow 15.08 L/min
+1,80,,,,,,target flow 24.13 L/min
+1,120,,,,,,target flow 36.19 L/min
+1,180,,,,,,target flow 54.29 L/min
+1,250,,,,,,target flow 75.40 L/min
+2,2,,,,,,target flow 0.60 L/min
+2,3,,,,,,target flow 0.90 L/min
+2,5,,,,,,target flow 1.51 L/min
+2,8,,,,,,target flow 2.41 L/min
+2,12,,,,,,target flow 3.62 L/min
+2,20,,,,,,target flow 6.03 L/min
+2,30,,,,,,target flow 9.05 L/min
+2,50,,,,,,target flow 15.08 L/min
+2,80,,,,,,target flow 24.13 L/min
+2,120,,,,,,target flow 36.19 L/min
+2,180,,,,,,target flow 54.29 L/min
+2,250,,,,,,target flow 75.40 L/min
+3,2,,,,,,target flow 0.60 L/min
+3,3,,,,,,target flow 0.90 L/min
+3,5,,,,,,target flow 1.51 L/min
+3,8,,,,,,target flow 2.41 L/min
+3,12,,,,,,target flow 3.62 L/min
+3,20,,,,,,target flow 6.03 L/min
+3,30,,,,,,target flow 9.05 L/min
+3,50,,,,,,target flow 15.08 L/min
+3,80,,,,,,target flow 24.13 L/min
+3,120,,,,,,target flow 36.19 L/min
+3,180,,,,,,target flow 54.29 L/min
+3,250,,,,,,target flow 75.40 L/min
