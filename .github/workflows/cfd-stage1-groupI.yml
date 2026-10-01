@@ -49,6 +49,10 @@ jobs:
           - I1_F2_t18_U4_az000_open_solid_medium_b34s16_shroud70
           - I1_F2_t18_U4_az000_open_solid_medium_b34s16_shroud100
           - I1_F2_t18_U4_az000_open_solid_medium_b34s16_shroud100_wide
+          # validation leg: the reference sub-deck case carries BOTH probes, so its
+          # patch integral and its bedExit faceZone sum must agree. If they do not,
+          # no group I flow number means anything.
+          - R4_F2_t18_U4_az000_open_solid_medium_b34s16
     steps:
       - uses: actions/checkout@v4
       - name: Install OpenFOAM 12
