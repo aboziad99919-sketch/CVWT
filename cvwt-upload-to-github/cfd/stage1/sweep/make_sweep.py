@@ -17,7 +17,7 @@ def k_omega(U, I=0.05, l=0.01, cmu=0.09):
     k = 1.5 * (U * I) ** 2; return k, math.sqrt(k) / (cmu ** 0.25 * l)
 
 cases = []
-def add(group, fid, t_mm, U, az, top, mesh="medium", core="holes", why="", bed_z0=None,
+def add(group, fid, t_mm, U, az, top, mesh="medium", core="holes", why="", bed_z0=None, intake=None,
         bore_mm=17.0, slot_r_mm=16.0, scale=1.0):
     """core: 'holes' = perforated cylinder (design as drawn); 'solid' = unperforated cylinder (reversed layout).
 
@@ -30,7 +30,9 @@ def add(group, fid, t_mm, U, az, top, mesh="medium", core="holes", why="", bed_z
         cid += f"_b{int(round(bore_mm))}s{int(round(slot_r_mm))}"
     if abs(scale - 1.0) > 1e-9:
         cid += f"_x{int(round(scale))}"
+    if intake: cid += f"_{intake}"
     cases.append(dict(case_id=cid, group=group, filter=fid, thickness_mm=t_mm, U_mps=U, azimuth_deg=az,
+                      intake=intake,
                       top=top, core=core, mesh=mesh, purpose=why, bed_z0=bed_z0,
                       bore_mm=bore_mm, slot_r_mm=slot_r_mm, scale=scale))
 
@@ -112,6 +114,28 @@ for fid in ("F1", "F2", "F3", "F4"):
     add("R1", fid, 18, 4, 0, "open", core="solid", why="reversed layout: deck-level intake, top exhaust")
 for U in (2, 6):
     add("R2", "F2", 18, U, 0, "open", core="solid", why="reversed layout, speed scaling")
+# 1I  INTAKE REDESIGN (user, 1 Oct 2026). The stage-1 model drew air through slots cut down through
+#     the base dish, mount plates and median plate, venting at z = -25 mm to "still room air". That
+#     exists on a test bench; on a road median the base sits on ground and there is no reservoir
+#     under it. The path was never buildable. It is replaced by an ANNULAR slot through the housing
+#     wall into the plenum below the bed: omnidirectional (traffic wind alternates with the lane),
+#     1357 mm2 at 6 mm height against the old 467 mm2, and axisymmetric so it meshes cleanly.
+#
+#     The user also asked for the intake to sit at least 100 mm above the deck, to escape road grit.
+#     The D1 rake says the static pressure there is -5.9 Pa against -7.6 Pa in the bore, leaving
+#     ~1.7 Pa of the 7.6 Pa the circuit works on today - about 29 % of the flow on the fitted system
+#     curve. The shroud variants carry the intake mouth up to 85 and 115 mm above the deck through a
+#     concentric sleeve, so that cost is MEASURED rather than argued. shroud100_wide doubles the
+#     sleeve annulus to separate duct loss from the pressure penalty.
+for v, why in (("slot14_h6",  "annular wall intake 29 mm above the deck - the buildable baseline"),
+               ("slot20_h6",  "same, 35 mm above the deck: how fast does the stagnation region fade?"),
+               ("slot14_h12", "slot height doubled: is 1357 mm2 already enough open area?"),
+               ("shroud70",   "intake mouth 85 mm above the deck, below the rotor"),
+               ("shroud100",  "intake mouth 115 mm above the deck - the user's requirement, measured"),
+               ("shroud100_wide", "same mouth, sleeve annulus 3318 mm2: duct loss or pressure loss?")):
+    add("I1", "F2", 18, 4, 0, "open", core="solid", bore_mm=34.0, slot_r_mm=16.0,
+        intake=v, why=why)
+
 # mesh independence on the baseline (medium is in B1)
 for mesh in ("coarse", "fine"):
     add("M1", "F2", 18, 4, 0, "capped", mesh, why="grid convergence (GCI) on baseline")
@@ -174,8 +198,16 @@ def create(case):
     for n in ("cvwt_caps", "cvwt_topcap"):
         shutil.copy(GEOM / f"{n}.stl", g / f"{n}.stl")
     # widened variants keep the surface NAMES, so snappy/topoSet need no per-case edits
-    shutil.copy(GEOM / f"cvwt_housing_cfd{hsuf}.stl", g / "cvwt_housing_cfd.stl")
-    shutil.copy(GEOM / f"cvwt_base_stack{ssuf}.stl", g / "cvwt_base_stack.stl")
+    intake = case.get("intake")
+    if intake:
+        # The intake variants keep the surface FILENAMES, so snappy and topoSet need no per-case
+        # edits: the housing is replaced by the slotted/shrouded one and the base by a sealed stack
+        # with no through-path at all.
+        shutil.copy(GEOM / f"cvwt_intake_{intake}.stl", g / "cvwt_housing_cfd.stl")
+        shutil.copy(GEOM / "cvwt_base_stack_sealed.stl", g / "cvwt_base_stack.stl")
+    else:
+        shutil.copy(GEOM / f"cvwt_housing_cfd{hsuf}.stl", g / "cvwt_housing_cfd.stl")
+        shutil.copy(GEOM / f"cvwt_base_stack{ssuf}.stl", g / "cvwt_base_stack.stl")
     # the core cylinder: perforated (as drawn) or unperforated (reversed layout) - same patch name either way
     shutil.copy(GEOM / ("cvwt_tube.stl" if case["core"] == "holes" else "cvwt_tube_solid.stl"), g / "cvwt_tube.stl")
     rotate_stl(GEOM / "cvwt_fins.stl", g / "cvwt_fins.stl", case["azimuth_deg"])
@@ -190,6 +222,32 @@ def create(case):
             # the porous cylinder is cut 0.2 mm oversize so it reaches the wall without leaving a gap
             "BORE_R": f"{S * (case.get('bore_mm', 17.0) + 0.2)/1000:.5f}",
             "LVL": L, "LVL_1": L - 1, "LVL_2": L - 2, "LVL_3": L - 3, "NPROCS": 4}
+    # How the filter-circuit flow is measured. With the sub-deck slots the exits are on the domain
+    # boundary and a patch integral is exact. Group I has no such patch, so the same quantity is
+    # taken on a plane cut through the bore just above the bed, bounded to the bore radius so it
+    # cannot pick up the external flow. Normal is -z, which keeps the sign convention (outflow
+    # negative) that every existing parser and all 45 collected cases already use.
+    if intake:
+        zq = float(subs["FILTER_Z1"]) + 0.002
+        rq = float(subs["BORE_R"])
+        subs["QFLOW"] = (
+            "    Q_outletFilter\n    {\n"
+            "        type            surfaceFieldValue;\n"
+            '        libs            ("libfieldFunctionObjects.so");\n'
+            "        writeControl    timeStep;\n        writeInterval   1;\n"
+            "        log             false;\n        writeFields     false;\n"
+            "        surfaceFormat   none;\n"
+            "        regionType      sampledSurface;\n        name            bedExitPlane;\n"
+            "        sampledSurfaceDict\n        {\n"
+            "            type            cuttingPlane;\n            planeType       pointAndNormal;\n"
+            f"            pointAndNormalDict {{ point (0 0 {zq:.5f}); normal (0 0 -1); }}\n"
+            "            interpolate     true;\n"
+            f"            bounds          ({-rq:.5f} {-rq:.5f} {zq-0.001:.5f}) "
+            f"({rq:.5f} {rq:.5f} {zq+0.001:.5f});\n"
+            "        }\n"
+            "        operation       areaNormalIntegrate;\n        fields          (U);\n    }")
+    else:
+        subs["QFLOW"] = "    #includeFunc patchFlowRate(patch=outletFilter, name=Q_outletFilter)"
     if abs(S - 1.0) > 1e-9:
         apply_scale(dst, S)
     for p in dst.rglob("*"):
@@ -207,6 +265,11 @@ def create(case):
             assert not left, f"unresolved {left} in {p}"
             p.write_text(t)
     if case["top"] == "open": (g / "cvwt_topcap.stl").unlink()
+    if intake:
+        # Allrun reads this to skip the outletFilter face check, which cannot apply here.
+        (dst / "system" / "INTERNAL_INTAKE").write_text(
+            f"intake variant: {intake}\nthe filter circuit draws through an annular slot in the "
+            f"housing wall, not through the base\n")
     (dst / "case_params.json").write_text(json.dumps({**case, **subs}, indent=2))
 
 if __name__ == "__main__":
