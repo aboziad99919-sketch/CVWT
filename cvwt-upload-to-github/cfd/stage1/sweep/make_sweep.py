@@ -222,14 +222,22 @@ def create(case):
             # the porous cylinder is cut 0.2 mm oversize so it reaches the wall without leaving a gap
             "BORE_R": f"{S * (case.get('bore_mm', 17.0) + 0.2)/1000:.5f}",
             "LVL": L, "LVL_1": L - 1, "LVL_2": L - 2, "LVL_3": L - 3, "NPROCS": 4}
+    # Flow-measuring slabs, 2 mm at rig scale. The finest mesh resolves 0.3 mm here, the coarsest
+    # 2.5 mm, so the slab is at least ~2 cells deep in every case and the shared-face set is never
+    # empty. They start 1 mm above the bed so the measurement is in the bore, not in the porous zone.
+    _z1 = float(subs["FILTER_Z1"])
+    subs["QZ_LO"] = f"{_z1 + 0.001 * S:.5f}"
+    subs["QZ_MID"] = f"{_z1 + 0.003 * S:.5f}"
+    subs["QZ_HI"] = f"{_z1 + 0.005 * S:.5f}"
     # How the filter-circuit flow is measured. With the sub-deck slots the exits are on the domain
-    # boundary and a patch integral is exact. Group I has no such patch, so the same quantity is
-    # taken on a plane cut through the bore just above the bed, bounded to the bore radius so it
-    # cannot pick up the external flow. Normal is -z, which keeps the sign convention (outflow
-    # negative) that every existing parser and all 45 collected cases already use.
+    # boundary and a patch integral is exact. Group I has no such patch. The first attempt sampled a
+    # cuttingPlane with a `bounds` entry, which OpenFOAM did NOT apply: the plane spanned the whole
+    # domain and integrated the external field, reporting ~1300 L/min through a 34 mm bore (25 m/s,
+    # energetically impossible on 7.6 Pa of head). It is now summed over the bedExit FACE ZONE that
+    # topoSet cuts inside the bore, which cannot see outside the housing. phi is the volumetric flux
+    # for the incompressible solver, so the sum is m3/s directly, and the zone is oriented so that
+    # outflow is negative - the convention every parser and all 54 collected cases already use.
     if intake:
-        zq = float(subs["FILTER_Z1"]) + 0.002
-        rq = float(subs["BORE_R"])
         subs["QFLOW"] = (
             "    Q_outletFilter\n    {\n"
             "        type            surfaceFieldValue;\n"
@@ -237,17 +245,23 @@ def create(case):
             "        writeControl    timeStep;\n        writeInterval   1;\n"
             "        log             false;\n        writeFields     false;\n"
             "        surfaceFormat   none;\n"
-            "        regionType      sampledSurface;\n        name            bedExitPlane;\n"
-            "        sampledSurfaceDict\n        {\n"
-            "            type            cuttingPlane;\n            planeType       pointAndNormal;\n"
-            f"            pointAndNormalDict {{ point (0 0 {zq:.5f}); normal (0 0 -1); }}\n"
-            "            interpolate     true;\n"
-            f"            bounds          ({-rq:.5f} {-rq:.5f} {zq-0.001:.5f}) "
-            f"({rq:.5f} {rq:.5f} {zq+0.001:.5f});\n"
-            "        }\n"
-            "        operation       areaNormalIntegrate;\n        fields          (U);\n    }")
+            "        regionType      faceZone;\n        name            bedExit;\n"
+            "        operation       sum;\n        fields          (phi);\n    }")
     else:
-        subs["QFLOW"] = "    #includeFunc patchFlowRate(patch=outletFilter, name=Q_outletFilter)"
+        # Groups A-M keep the trusted patch integral as Q_outletFilter, and ALSO carry the new
+        # faceZone probe as Q_bedExit. The two measure the same physical flow by independent
+        # routes, so any case run with both is a direct check on the group I probe. Nothing
+        # downstream reads Q_bedExit, so adding it cannot change an existing result.
+        subs["QFLOW"] = (
+            "    #includeFunc patchFlowRate(patch=outletFilter, name=Q_outletFilter)\n"
+            "    Q_bedExit\n    {\n"
+            "        type            surfaceFieldValue;\n"
+            '        libs            ("libfieldFunctionObjects.so");\n'
+            "        writeControl    timeStep;\n        writeInterval   1;\n"
+            "        log             false;\n        writeFields     false;\n"
+            "        surfaceFormat   none;\n"
+            "        regionType      faceZone;\n        name            bedExit;\n"
+            "        operation       sum;\n        fields          (phi);\n    }")
     if abs(S - 1.0) > 1e-9:
         apply_scale(dst, S)
     for p in dst.rglob("*"):
