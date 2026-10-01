@@ -14,4 +14,17 @@ actions
       point1 (0 0 $FILTER_Z0); point2 (0 0 $FILTER_Z1); radius $BORE_R; }
     { name filter; type cellZoneSet; action new; source setToCellZone; set filterCells; }
 
+    // bedExit: the faces shared by a cell just below QZ_MID and a cell just above it, inside the
+    // bore. Flux summed over this zone is the flow leaving the bed, with no exposure to the
+    // external field - which an unclipped cuttingPlane did have.
+    { name qBelow; type cellSet; action new; source cylinderToCell;
+      point1 (0 0 $QZ_LO); point2 (0 0 $QZ_MID); radius $BORE_R; }
+    { name qAbove; type cellSet; action new; source cylinderToCell;
+      point1 (0 0 $QZ_MID); point2 (0 0 $QZ_HI); radius $BORE_R; }
+    { name bedExitF; type faceSet; action new;    source cellToFace; set qBelow; option all; }
+    { name bedExitF; type faceSet; action subset; source cellToFace; set qAbove; option all; }
+    // normals point OUT of qAbove, i.e. downward, so upward outflow sums NEGATIVE - the sign
+    // convention every existing parser and all 54 collected cases already use.
+    { name bedExit; type faceZoneSet; action new; source setsToFaceZone;
+      faceSet bedExitF; cellSet qAbove; }
 );
