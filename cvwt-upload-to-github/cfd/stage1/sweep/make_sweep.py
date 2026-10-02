@@ -18,6 +18,7 @@ def k_omega(U, I=0.05, l=0.01, cmu=0.09):
 
 cases = []
 def add(group, fid, t_mm, U, az, top, mesh="medium", core="holes", why="", bed_z0=None, intake=None,
+        skirt=None, stack=None, tube_mm=None,
         bore_mm=17.0, slot_r_mm=16.0, scale=1.0):
     """core: 'holes' = perforated cylinder (design as drawn); 'solid' = unperforated cylinder (reversed layout).
 
@@ -31,8 +32,10 @@ def add(group, fid, t_mm, U, az, top, mesh="medium", core="holes", why="", bed_z
     if abs(scale - 1.0) > 1e-9:
         cid += f"_x{int(round(scale))}"
     if intake: cid += f"_{intake}"
+    if skirt:  cid += f"_{skirt}"
+    if tube_mm: cid += f"_t{int(round(tube_mm))}"
     cases.append(dict(case_id=cid, group=group, filter=fid, thickness_mm=t_mm, U_mps=U, azimuth_deg=az,
-                      intake=intake,
+                      intake=intake, skirt=skirt, stack=stack, tube_mm=tube_mm,
                       top=top, core=core, mesh=mesh, purpose=why, bed_z0=bed_z0,
                       bore_mm=bore_mm, slot_r_mm=slot_r_mm, scale=scale))
 
@@ -114,6 +117,35 @@ for fid in ("F1", "F2", "F3", "F4"):
     add("R1", fid, 18, 4, 0, "open", core="solid", why="reversed layout: deck-level intake, top exhaust")
 for U in (2, 6):
     add("R2", "F2", 18, U, 0, "open", core="solid", why="reversed layout, speed scaling")
+# 1J  SKIRT INTAKE + CemBioFoam CASSETTE (user sketch, 2 Oct 2026; ESC proposal CemBioFoam-Air).
+#     Group I proved that height cannot buy both grit rejection and head: lifting the intake into
+#     the rotor's suction field cut the driving pressure from 4.30 Pa to 1.60 Pa. This design puts
+#     the intake back at deck level, where the rake reads nearly ambient, and rejects grit with a
+#     perforated cone instead - 1.35 m2 of open area against a 0.228 m2 slot, so the screen's own
+#     loss is below 0.01 Pa. The packed biochar is replaced by the proposal's three-grade open-cell
+#     cement foam cassette, 113x more permeable than F2 at the coarse end.
+#
+#     Full scale, because a 3 x 25 mm foam cassette is a real object: pore size does not shrink when
+#     the device does, so a 1:12 model of it would be a different filter.
+#
+#     A 1-D balance calibrated against the measured FS_F2 case (it predicts 435 L/min where CFD
+#     measured 390) says the cassette should give about 4260 L/min and - the reason the tube is in
+#     this sweep - that the Ø240 exhaust tube then becomes 38 % of the whole loss. The bottleneck
+#     moves out of the filter for the first time in this study.
+SK = 12.0
+for fid, sk, why in (
+        ("SEALED", "r100", "sealed cassette: what head does the skirt actually deliver?"),
+        ("CEM",    "r100", "the sketch as drawn: skirt base r1200 mm, three-grade foam cassette"),
+        ("CEM",    "r140", "skirt base r1680 mm: does a wider cone buy anything, or is the slot the limit?"),
+        ("F2",     "r100", "same skirt, old packed biochar: isolates the media change from the intake change")):
+    add("J1", fid, 18, 4, 0, "open", core="solid", bore_mm=34.0, slot_r_mm=16.0, scale=SK,
+        skirt=sk, stack=(25.0, 25.0, 25.0), bed_z0=0.027, why=why)
+# The flow probe has been wrong twice: a cuttingPlane that ignored its bounds, then a faceZone that
+# disagreed with the patch integral by 1.95x. This leg runs the trusted patch integral and the new
+# cell-average probe on the same reference case, so group J's flow is checked, not assumed.
+add("J1", "F2", 18, 4, 0, "open", core="solid", bore_mm=34.0, slot_r_mm=16.0,
+    why="validation: patch integral vs cell-average probe on the reference case")
+
 # 1I  INTAKE REDESIGN (user, 1 Oct 2026). The stage-1 model drew air through slots cut down through
 #     the base dish, mount plates and median plate, venting at z = -25 mm to "still room air". That
 #     exists on a test bench; on a road median the base sits on ground and there is no reservoir
@@ -186,6 +218,26 @@ def rotate_stl(src, dst, deg):
             out.append(line)
     open(dst, "w").writelines(out)
 
+QCELL_BLOCK = """    // Flow, measured without any surface at all: the area-average axial velocity in a slab of
+    // the bore. components(U) makes Uz a scalar field; volAverage over a region of constant
+    // cross-section is the mean axial velocity, so Q = Uz_avg * pi * BORE_R^2. No normal, no flip
+    // map, nothing outside the housing can reach it. The collector does the multiplication.
+    #includeFunc components(U)
+    Q_bedCell
+    {
+        type            volFieldValue;
+        libs            ("libfieldFunctionObjects.so");
+        writeControl    timeStep;
+        writeInterval   1;
+        log             false;
+        writeFields     false;
+        regionType      cellZone;
+        name            qCell;
+        operation       volAverage;
+        fields          (Uz);
+    }"""
+
+
 def create(case):
     dst = HERE / "runs" / case["case_id"]
     if dst.exists():
@@ -198,8 +250,13 @@ def create(case):
     for n in ("cvwt_caps", "cvwt_topcap"):
         shutil.copy(GEOM / f"{n}.stl", g / f"{n}.stl")
     # widened variants keep the surface NAMES, so snappy/topoSet need no per-case edits
-    intake = case.get("intake")
-    if intake:
+    intake, skirt = case.get("intake"), case.get("skirt")
+    if skirt:
+        # The skirt file already contains the slotted housing AND the perforated cone as named
+        # shells, so snappy and surfaceFeatures address it by the same filename as always.
+        shutil.copy(GEOM / f"cvwt_skirt_{skirt}_p30.stl", g / "cvwt_housing_cfd.stl")
+        shutil.copy(GEOM / "cvwt_base_stack_sealed.stl", g / "cvwt_base_stack.stl")
+    elif intake:
         # The intake variants keep the surface FILENAMES, so snappy and topoSet need no per-case
         # edits: the housing is replaced by the slotted/shrouded one and the base by a sealed stack
         # with no through-path at all.
@@ -211,7 +268,12 @@ def create(case):
     # the core cylinder: perforated (as drawn) or unperforated (reversed layout) - same patch name either way
     shutil.copy(GEOM / ("cvwt_tube.stl" if case["core"] == "holes" else "cvwt_tube_solid.stl"), g / "cvwt_tube.stl")
     rotate_stl(GEOM / "cvwt_fins.stl", g / "cvwt_fins.stl", case["azimuth_deg"])
-    if case["filter"] == "SEALED": d, f = SEALED["d"], SEALED["f"]
+    # D_COEFF/F_COEFF stay for the single-medium dictionaries and for the case record; a layered
+    # cassette ("CEM") has no single pair, so it reports its first grade and the per-layer values
+    # below are what the solver actually uses.
+    if case["filter"] == "SEALED":  d, f = SEALED["d"], SEALED["f"]
+    elif case["filter"] == "CEM":   d, f = (float(FILTERS["C1"]["Darcy_d_1/m2"]),
+                                            float(FILTERS["C1"]["Forchheimer_f_1/m"]))
     else: d, f = float(FILTERS[case["filter"]]["Darcy_d_1/m2"]), float(FILTERS[case["filter"]]["Forchheimer_f_1/m"])
     S = case.get("scale", 1.0)
     k, om = k_omega(case["U_mps"], l=0.01 * S); L = LEVELS[case["mesh"]]
@@ -222,6 +284,40 @@ def create(case):
             # the porous cylinder is cut 0.2 mm oversize so it reaches the wall without leaving a gap
             "BORE_R": f"{S * (case.get('bore_mm', 17.0) + 0.2)/1000:.5f}",
             "LVL": L, "LVL_1": L - 1, "LVL_2": L - 2, "LVL_3": L - 3, "NPROCS": 4}
+    # The filter cassette. A single-medium bed is one layer; the CemBioFoam cassette is three
+    # 25 mm grades whose thickness is ABSOLUTE - a foam pore does not shrink when the device is
+    # scaled, so a x12 case carries the same 75 mm stack a 1:1 case does.
+    z0 = float(subs["FILTER_Z0"])
+    stack = case.get("stack")
+    if stack:
+        bounds = [z0]
+        for t in stack: bounds.append(bounds[-1] + t / 1000.0)
+        subs["FILTER_Z1"] = f"{bounds[-1]:.5f}"
+    else:
+        bounds = [z0, float(subs["FILTER_Z1"])]
+    if case["filter"] == "CEM":   grades = ["C1", "C2", "C3"][:len(bounds) - 1]
+    else:                         grades = [case["filter"]] * (len(bounds) - 1)
+    lp, fz, pm = [], [], []
+    for i, gid in enumerate(grades, 1):
+        if gid == "SEALED": dd, ff = SEALED["d"], SEALED["f"]
+        else: dd, ff = (float(FILTERS[gid]["Darcy_d_1/m2"]), float(FILTERS[gid]["Forchheimer_f_1/m"]))
+        lp.append(f"LZ0_{i}       {bounds[i-1]:.5f};\nLZ1_{i}       {bounds[i]:.5f};\n"
+                  f"D_{i}         {dd:.6g};        // {gid}\nF_{i}         {ff:.6g};")
+        fz.append(f"    {{ name filter{i}Cells; type cellSet; action new; source cylinderToCell;\n"
+                  f"      point1 (0 0 $LZ0_{i}); point2 (0 0 $LZ1_{i}); radius $BORE_R; }}\n"
+                  f"    {{ name filter{i}; type cellZoneSet; action new; source setToCellZone;"
+                  f" set filter{i}Cells; }}")
+        pm.append(f"filterLayer{i}\n{{\n    type            porosityForce;\n"
+                  f"    porosityForceCoeffs\n    {{\n        cellZone        filter{i};\n"
+                  f"        type            DarcyForchheimer;\n"
+                  f"        d   ($D_{i} $D_{i} $D_{i});\n        f   ($F_{i} $F_{i} $F_{i});\n"
+                  f"        coordinateSystem filterAxes;\n    }}\n}}")
+    subs["LAYERPARAMS"]   = "\n".join(lp)
+    subs["FILTERZONES"]   = "\n".join(fz)
+    subs["POROUSMODELS"]  = "\n".join(pm)
+    subs["QC_Z0"] = f"{bounds[-1] + 0.002 * S:.5f}"
+    subs["QC_Z1"] = f"{bounds[-1] + 0.008 * S:.5f}"
+
     # Flow-measuring slabs, 2 mm at rig scale. The finest mesh resolves 0.3 mm here, the coarsest
     # 2.5 mm, so the slab is at least ~2 cells deep in every case and the shared-face set is never
     # empty. They start 1 mm above the bed so the measurement is in the bore, not in the porous zone.
@@ -237,8 +333,14 @@ def create(case):
     # topoSet cuts inside the bore, which cannot see outside the housing. phi is the volumetric flux
     # for the incompressible solver, so the sum is m3/s directly, and the zone is oriented so that
     # outflow is negative - the convention every parser and all 54 collected cases already use.
-    if intake:
-        subs["QFLOW"] = (
+    if skirt:
+        # Group J gets the cell-average probe ONLY. The faceZone probe below is known wrong (it
+        # disagreed with the patch integral by 1.95x on the reference case), so it is not carried
+        # into a new group where nobody could catch it. Its check lives on the validation leg,
+        # which is a legacy case and still has the trusted patch integral.
+        subs["QFLOW"] = QCELL_BLOCK
+    elif intake:
+        subs["QFLOW"] = (QCELL_BLOCK + "\n" + 
             "    Q_outletFilter\n    {\n"
             "        type            surfaceFieldValue;\n"
             '        libs            ("libfieldFunctionObjects.so");\n'
@@ -254,6 +356,7 @@ def create(case):
         # downstream reads Q_bedExit, so adding it cannot change an existing result.
         subs["QFLOW"] = (
             "    #includeFunc patchFlowRate(patch=outletFilter, name=Q_outletFilter)\n"
+            + QCELL_BLOCK + "\n"
             "    Q_bedExit\n    {\n"
             "        type            surfaceFieldValue;\n"
             '        libs            ("libfieldFunctionObjects.so");\n'
@@ -279,12 +382,53 @@ def create(case):
             assert not left, f"unresolved {left} in {p}"
             p.write_text(t)
     if case["top"] == "open": (g / "cvwt_topcap.stl").unlink()
-    if intake:
+    if skirt:
+        # Refinement, re-cut for this group. Three things make the stock plan wrong here:
+        #   coreZone is a 21 mm cylinder drawn for the original 17 mm bore - at x12 it would leave
+        #     the outer two thirds of a 410 mm bore at background resolution;
+        #   the cassette is three 25 mm layers in a 3.7 m tall domain and needs its own fine box,
+        #     but only around the cassette, not up the whole tube;
+        #   the perforated cone is a 30 mm shell with 52 mm open bands and sits outside every
+        #     existing region, so without one it would not be captured at all.
+        # Base cells are 240 mm at full scale, so level 5 is 7.5 mm and level 4 is 15 mm.
+        # (The same coreZone mismatch affects the b34 cases in groups D-I at rig scale. That is
+        # reported rather than changed underneath results already collected.)
+        sn = dst / "system" / "snappyHexMeshDict"
+        t = sn.read_text()
+        br, z0c, z1c = float(subs["BORE_R"]), bounds[0], float(subs["QC_Z1"])
+        t, n = re.subn(r"coreZone\s+\{[^}]*\}",
+            f"coreZone     {{ type searchableCylinder; point1 (0 0 0); point2 (0 0 {0.075*S:.4f});"
+            f" radius {br + 0.004*S:.4f}; }}\n"
+            f"    cassetteZone {{ type searchableCylinder; point1 (0 0 {z0c - 0.004*S:.4f});"
+            f" point2 (0 0 {z1c + 0.004*S:.4f}); radius {br + 0.002*S:.4f}; }}\n"
+            f"    tubeZone     {{ type searchableCylinder; point1 (0 0 {0.070*S:.4f});"
+            f" point2 (0 0 {0.312*S:.4f}); radius {0.021*S:.4f}; }}\n"
+            f"    skirtZone    {{ type searchableCylinder; point1 (0 0 {-0.016*S:.4f});"
+            f" point2 (0 0 {0.028*S:.4f}); radius {0.106*S:.4f}; }}", t, count=1)
+        assert n == 1, "coreZone entry not found in snappyHexMeshDict"
+        # cassetteZone carries the fine resolution; the rest of the bore does not need it, and at
+        # x12 a 0.9 m tall cylinder at level 5 would cost 1.4 M cells on its own.
+        t = t.replace("        coreZone { mode inside; level $LVL; }",
+                      "        coreZone { mode inside; level $LVL_1; }")
+        t = t.replace("        slotBox  { mode inside; level $LVL; }",
+            "        cassetteZone { mode inside; level $LVL; }     // 3 x 25 mm foam layers\n"
+            "        tubeZone     { mode inside; level $LVL_2; }\n"
+            "        skirtZone    { mode inside; level $LVL_2; }   // plenum; the cone surface is refined by the housing entry")
+        # the cone shell is 30 mm with 52 mm open bands: at $LVL_1 that is 2 cells of solid, so the
+        # surface itself goes one level finer or snappy closes the bands over
+        t = t.replace("housing { level ($LVL_1 $LVL_1);", "housing { level ($LVL $LVL);")
+        sn.write_text(t)
+
+    if intake or skirt:
         # Allrun reads this to skip the outletFilter face check, which cannot apply here.
         (dst / "system" / "INTERNAL_INTAKE").write_text(
             f"intake variant: {intake}\nthe filter circuit draws through an annular slot in the "
             f"housing wall, not through the base\n")
-    (dst / "case_params.json").write_text(json.dumps({**case, **subs}, indent=2))
+    # the generated dictionary blocks are big and are already in the case files; keeping them
+    # out of the record stops every collected artifact carrying three copies of them
+    rec = {k: v for k, v in {**case, **subs}.items()
+           if k not in ("LAYERPARAMS", "FILTERZONES", "POROUSMODELS", "QFLOW")}
+    (dst / "case_params.json").write_text(json.dumps(rec, indent=2))
 
 if __name__ == "__main__":
     iters = 3000; us_per_cell_iter = 2.5e-6            # incompressible RANS, per core (rough)

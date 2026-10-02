@@ -18,7 +18,7 @@ Two things this gets right that a naive version does not:
    case carries Q ~ 1e-8 m3/s by construction; a percentage of that is noise about nothing. Pressures
    are scaled by the dynamic pressure 0.5*rho*U^2 and flows by the matching empty-housing (F0) flow.
 """
-import glob, json, os, re, statistics, sys
+import glob, json, math, os, re, statistics, sys
 
 RUNS = sys.argv[1] if len(sys.argv) > 1 else "runs"
 WINDOW = float(sys.argv[2]) if len(sys.argv) > 2 else 500.0
@@ -160,6 +160,18 @@ for c in cases:
     raw_x = dat(c, "Q_bedExit")
     if raw_x:
         series.append(("Q_bedExit (faceZone cross-check)", "m3/s", raw_x, qref, False))
+    # Q_bedCell is the area-average axial velocity in a slab of the bore, so the flow is
+    # Uz_avg * pi * BORE_R^2. No surface, no normal, no flip map. On a legacy case it sits beside
+    # the trusted patch integral and the two should agree; on an internal-intake case it is the
+    # only flow number there is. Sign follows Uz: upward outflow is POSITIVE here, where the patch
+    # convention is negative, so it is negated to keep one convention across the whole study.
+    raw_c = dat(c, "Q_bedCell")
+    if raw_c:
+        try:    area = math.pi * float(par["BORE_R"]) ** 2
+        except (KeyError, TypeError, ValueError): area = None
+        if area:
+            conv = [(tt, [-v[0] * area]) for tt, v in raw_c]
+            series.append(("Q_bedCell (cell average x bore area)", "m3/s", conv, qref, False))
     if raw_p:
         d = lambda fn: [(tt, [fn(pv)]) for tt, pv in raw_p]
         series.append(("Cp_core", "-", d(lambda pv: (pv[0] - pv[7]) / (0.5 * U * U)), 1.0, False))
