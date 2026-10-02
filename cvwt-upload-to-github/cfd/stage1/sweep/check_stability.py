@@ -153,6 +153,13 @@ for c in cases:
         sealed = par.get("filter") == "SEALED"
         note = "" if not sealed else "  (sealed: zero by construction)"
         series.append(("Q_outletFilter" + note, "m3/s", raw_q, qref, sealed))
+    # Independent cross-check. Legacy groups carry BOTH probes: Q_outletFilter integrates the
+    # outletFilter patch, Q_bedExit sums phi over the faceZone cut inside the bore. They measure the
+    # same physical flow by different routes, so printing them side by side is a direct test of the
+    # faceZone probe that group I depends on. Group I has only the faceZone one.
+    raw_x = dat(c, "Q_bedExit")
+    if raw_x:
+        series.append(("Q_bedExit (faceZone cross-check)", "m3/s", raw_x, qref, False))
     if raw_p:
         d = lambda fn: [(tt, [fn(pv)]) for tt, pv in raw_p]
         series.append(("Cp_core", "-", d(lambda pv: (pv[0] - pv[7]) / (0.5 * U * U)), 1.0, False))
