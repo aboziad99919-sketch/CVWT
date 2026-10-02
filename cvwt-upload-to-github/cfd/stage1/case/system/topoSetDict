@@ -9,22 +9,27 @@ FoamFile
 #include "caseParams"
 actions
 (
-    // porous biochar bed = fluid cells inside the housing bore between FILTER_Z0 and FILTER_Z1
-    { name filterCells; type cellSet; action new; source cylinderToCell;
-      point1 (0 0 $FILTER_Z0); point2 (0 0 $FILTER_Z1); radius $BORE_R; }
-    { name filter; type cellZoneSet; action new; source setToCellZone; set filterCells; }
+    // Filter zones. make_sweep writes one cylinder per medium: a single-medium bed has one, the
+    // CemBioFoam cassette has three stacked grades in flow order (coarse pre-filter, reactive,
+    // fine adsorber). Each is cut 0.2 mm oversize in radius so it reaches the bore wall.
+@@FILTERZONES@@
 
-    // bedExit: the faces shared by a cell just below QZ_MID and a cell just above it, inside the
-    // bore. Flux summed over this zone is the flow leaving the bed, with no exposure to the
-    // external field - which an unclipped cuttingPlane did have.
+    // Flow-measuring slab: plain cells in the bore above the filter, no surface involved. The
+    // area-average of Uz here, times the bore area, is the flow. Two earlier probes failed by
+    // getting a SURFACE wrong - an unclipped cutting plane, then a faceZone whose flip map
+    // cancelled half its own faces - so this one has no surface to get wrong.
+    { name qCells; type cellSet; action new; source cylinderToCell;
+      point1 (0 0 $QC_Z0); point2 (0 0 $QC_Z1); radius $BORE_R; }
+    { name qCell; type cellZoneSet; action new; source setToCellZone; set qCells; }
+
+    // bedExit: kept so group I cases regenerate exactly as they ran. Its flux disagreed with the
+    // patch integral by 1.95x on the reference case and is NOT used for any new group.
     { name qBelow; type cellSet; action new; source cylinderToCell;
       point1 (0 0 $QZ_LO); point2 (0 0 $QZ_MID); radius $BORE_R; }
     { name qAbove; type cellSet; action new; source cylinderToCell;
       point1 (0 0 $QZ_MID); point2 (0 0 $QZ_HI); radius $BORE_R; }
     { name bedExitF; type faceSet; action new;    source cellToFace; set qBelow; option all; }
     { name bedExitF; type faceSet; action subset; source cellToFace; set qAbove; option all; }
-    // normals point OUT of qAbove, i.e. downward, so upward outflow sums NEGATIVE - the sign
-    // convention every existing parser and all 54 collected cases already use.
     { name bedExit; type faceZoneSet; action new; source setsToFaceZone;
       faceSet bedExitF; cellSet qAbove; }
 );

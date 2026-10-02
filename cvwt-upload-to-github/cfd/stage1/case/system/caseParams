@@ -15,6 +15,17 @@ F_COEFF     @@F_COEFF@@;       // Forchheimer f [1/m]
 FILTER_Z0   @@FILTER_Z0@@;     // porous bed bottom [m]
 BORE_R      @@BORE_R@@;        // housing bore radius [m]; the porous zone is cut 0.2 mm oversize
 FILTER_Z1   @@FILTER_Z1@@;     // porous bed top [m]  (bore plenum runs z = 0.005 to 0.058)
+// A layered cassette (group J, CemBioFoam) carries one line per grade; a single-medium bed
+// repeats the one grade so every dictionary below reads the same way.
+@@LAYERPARAMS@@
+// Flow measurement, take three. A patch integral needs a boundary patch, which the internal
+// intakes do not have. A cuttingPlane ignored its own `bounds` and swept the whole domain. A
+// faceZone sum disagreed with the patch by 1.95x because setsToFaceZone orients only some faces.
+// This is the area-average axial velocity in a slab of the bore: a cell average over a region of
+// constant cross-section, with no surface, no normal and no flip map to get wrong. Flow is
+// Uz_avg * pi * BORE_R^2, done by the collector, which also knows BORE_R.
+QC_Z0       @@QC_Z0@@;         // measuring slab bottom [m]
+QC_Z1       @@QC_Z1@@;         // measuring slab top [m]
 // Flow-measuring interface just above the bed. topoSet builds two thin cylindrical cell slabs
 // and makes a faceZone of the faces they share, so the measured surface is the bore cross-section
 // and nothing outside the housing can contribute. Slabs are >=2 cells thick at every mesh level.
