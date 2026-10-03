@@ -242,6 +242,22 @@ QCELL_BLOCK = """    // Flow, measured without any surface at all: the area-aver
     }"""
 
 
+DP_BLOCK = "\n".join(
+    f"""    p_{side}Cassette
+    {{
+        type            volFieldValue;
+        libs            ("libfieldFunctionObjects.so");
+        writeControl    timeStep;
+        writeInterval   1;
+        log             false;
+        writeFields     false;
+        select          cellSet;            // polyCellSet: OpenFOAM 12 reads select / cellSet
+        cellSet         p{side.capitalize()}Cells;
+        operation       volAverage;
+        fields          (p);
+    }}""" for side in ("below", "above"))
+
+
 def create(case):
     dst = HERE / "runs" / case["case_id"]
     if dst.exists():
@@ -316,6 +332,22 @@ def create(case):
                   f"        type            DarcyForchheimer;\n"
                   f"        d   ($D_{i} $D_{i} $D_{i});\n        f   ($F_{i} $F_{i} $F_{i});\n"
                   f"        coordinateSystem filterAxes;\n    }}\n}}")
+    if stack:
+        # Cassette pressure drop as an AREA average over thin slabs just below and above the stack.
+        # The centre-line probes are only representative when the bed is resistive enough to make
+        # the flow uniform. The CEM cassette is ~30x more open than F2: run #5 showed a reversed
+        # swirl on the axis below it and 3x the mean velocity on the axis above it, and the two
+        # axis points read 0.67 Pa where the measured flow needs ~2 Pa. Cell SETS, not zones: the
+        # upper slab overlaps qCell, and a cell may belong to only one zone.
+        z0s, z1s = bounds[0], bounds[-1]
+        lp.append(f"PB_Z0       {z0s - 0.0035 * S:.5f};   // area-average pressure slab below the cassette\n"
+                  f"PB_Z1       {z0s - 0.0010 * S:.5f};\n"
+                  f"PA_Z0       {z1s + 0.0010 * S:.5f};   // ... and above it\n"
+                  f"PA_Z1       {z1s + 0.0035 * S:.5f};")
+        fz.append("    { name pBelowCells; type cellSet; action new; source cylinderToCell;\n"
+                  "      point1 (0 0 $PB_Z0); point2 (0 0 $PB_Z1); radius $BORE_R; }\n"
+                  "    { name pAboveCells; type cellSet; action new; source cylinderToCell;\n"
+                  "      point1 (0 0 $PA_Z0); point2 (0 0 $PA_Z1); radius $BORE_R; }")
     subs["LAYERPARAMS"]   = "\n".join(lp)
     subs["FILTERZONES"]   = "\n".join(fz)
     subs["POROUSMODELS"]  = "\n".join(pm)
@@ -342,7 +374,7 @@ def create(case):
         # disagreed with the patch integral by 1.95x on the reference case), so it is not carried
         # into a new group where nobody could catch it. Its check lives on the validation leg,
         # which is a legacy case and still has the trusted patch integral.
-        subs["QFLOW"] = QCELL_BLOCK
+        subs["QFLOW"] = QCELL_BLOCK + ("\n" + DP_BLOCK if stack else "")
     elif intake:
         subs["QFLOW"] = (QCELL_BLOCK + "\n" + 
             "    Q_outletFilter\n    {\n"

@@ -65,7 +65,9 @@ class TestCreate(unittest.TestCase):
         d, _ = self._make("A2_F0_t18_U2_az000_open_holes_medium")
         for root, _, files in os.walk(d):
             for f in files:
-                if f.endswith(".stl") or f == "case_params.json": continue
+                # correctLayers.py is a Python helper, not an OpenFOAM dictionary: its regexes
+                # contain unbalanced brackets by design
+                if f.endswith((".stl", ".py")) or f == "case_params.json": continue
                 t = re.sub(r"//.*", "", open(os.path.join(root, f), errors="replace").read())
                 self.assertEqual(t.count("{"), t.count("}"), f)
                 self.assertEqual(t.count("("), t.count(")"), f)

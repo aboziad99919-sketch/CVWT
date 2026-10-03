@@ -148,6 +148,18 @@ sentinel.unlink()
 assert r.returncode == 2 and "ZZ_token_probe" in r.stdout, (
     "the token guard no longer catches an unsubstituted token - it would pass a broken case "
     f"through to a full-scale mesh (rc={r.returncode})")
+# run #5: the axis probes misread the open CEM cassette, and the mesh thinned its finest layer.
+# Every group J case must carry the area-average pressure slabs and the per-layer correction.
+assert "p_belowCassette" in cd and "p_aboveCassette" in cd and "select          cellSet;" in cd, \
+    "group J needs the area-average cassette pressure drop, not just the two axis probes"
+for k in ("PB_Z0", "PB_Z1", "PA_Z0", "PA_Z1"):
+    assert k in cp, f"{k} missing from caseParams"
+assert "pBelowCells" in ts and "pAboveCells" in ts, "pressure slabs not cut by topoSet"
+assert "cellZoneSet; action new; source setToCellZone; set pBelowCells" not in ts, \
+    "the pressure slabs must stay cell SETS: the upper one overlaps qCell, and zones cannot overlap"
+assert (run / "correctLayers.py").exists() and "correctLayers.py" in ar, \
+    "Allrun must correct the meshed layer thicknesses before foamRun"
+assert ar.index("correctLayers.py") < ar.index("par foamRun"), "the correction must run BEFORE foamRun"
 assert (run / "system" / "INTERNAL_INTAKE").exists(), \
     "group J has no outletFilter patch, so Allrun must skip that check"
 

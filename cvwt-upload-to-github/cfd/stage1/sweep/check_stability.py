@@ -187,6 +187,15 @@ for c in cases:
         series.append(("Cp_core", "-", d(lambda pv: (pv[0] - pv[7]) / (0.5 * U * U)), 1.0, False))
         series.append(("Cp_vs_plenum (old)", "-", d(lambda pv: (pv[0] - pv[6]) / (0.5 * U * U)), 1.0, False))
         series.append(("dp_bed", "Pa", d(lambda pv: (pv[3] - pv[4]) * RHO), q, False))
+    # Cassette pressure drop as an AREA average over slabs just below and above the stack. Where it
+    # exists it is the number to quote: dp_bed is two points on the axis, which run #5 showed is not
+    # representative when the bed is too open to make the flow uniform (CEM read 0.67 Pa on the axis
+    # against ~2 Pa needed for the measured flow).
+    raw_b, raw_a = dat(c, "p_belowCassette"), dat(c, "p_aboveCassette")
+    if raw_b and raw_a:
+        below = {tt: v[0] for tt, v in raw_b}
+        dpc = [(tt, [(v[0] - below[tt]) * RHO]) for tt, v in raw_a if tt in below]
+        series.append(("dp_cassette (area average)", "Pa", dpc, q, False))
 
     rows = []
     for label, unit, ser, scale, skip in series:

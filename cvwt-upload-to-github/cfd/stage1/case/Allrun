@@ -51,6 +51,12 @@ if [[ $RUN == 1 ]]; then
     grep -q "intakeSlot\|housing" constant/polyMesh/boundary || { echo "housing surface missing from the mesh"; exit 4; }
   fi
 fi
+# A multi-layer cassette meshes each layer to a whole number of cell rows; give every layer its
+# designed resistance before solving (single-layer beds are left untouched - see correctLayers.py).
+if [[ $RUN == 1 && -f correctLayers.py ]]; then
+  python3 correctLayers.py > log.correctLayers 2>&1 || { echo "LAYER CORRECTION REFUSED:"; cat log.correctLayers; exit 5; }
+  cat log.correctLayers
+fi
 par foamRun
 [[ $NP -gt 1 ]] && step reconstructPar -latestTime
 step foamToVTK -latestTime
