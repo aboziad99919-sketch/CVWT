@@ -108,11 +108,17 @@ assert "regionType      faceZone" not in cd, (
     "the faceZone probe disagreed with the patch integral by 1.95x; it must not return")
 assert "Q_bedCell" in cd and "regionType      cellZone" in cd and "name            qCell" in cd, \
     "group J has no boundary patch, so flow must come from the cell-average probe"
-assert "includeFunc components(U)" in cd, "volAverage needs Uz as a scalar field"
-assert "operation       volAverage" in cd and "fields          (Uz)" in cd
+assert "#includeFunc components" not in cd, (
+    "components(U) is one more OpenFOAM caseDict that has to exist on the runner. Average the "
+    "vector directly: read_cols strips the brackets and keeps the last column, which is Uz")
+assert "operation       volAverage" in cd and "fields          (U);" in cd
 assert z["QC_Z0"] > z["FILTER_Z1"], "the measuring slab must sit above the cassette, in clear bore"
 assert (z["QC_Z1"] - z["QC_Z0"]) > 0.05, "measuring slab too thin to hold cells at this scale"
 assert cd.count("{") == cd.count("}"), "controlDict braces are unbalanced"
+ar = (run / "Allrun").read_text()
+assert "foamDictionary" in ar and "-expand" in ar, (
+    "Allrun must expand the dictionaries before meshing. Group J's first run spent five full-scale "
+    "meshes before foamRun read controlDict and rejected it")
 assert (run / "system" / "INTERNAL_INTAKE").exists(), \
     "group J has no outletFilter patch, so Allrun must skip that check"
 
