@@ -119,6 +119,28 @@ ar = (run / "Allrun").read_text()
 assert "foamDictionary" in ar and "-expand" in ar, (
     "Allrun must expand the dictionaries before meshing. Group J's first run spent five full-scale "
     "meshes before foamRun read controlDict and rejected it")
+
+# ...and the smoke test must SURVIVE a clean case. Group J run #2 died in two seconds in every
+# leg, silently, with no output at all: the token hunt was a bare `grep | while` pipeline, and
+# under `set -euo pipefail` a grep that matches nothing exits 1 and takes the whole script with
+# it. The guard passing is the common case, so run it and insist it returns 0.
+lines = ar.splitlines()
+i = next(n for n, l in enumerate(lines) if l.strip().startswith("if grep -rlE"))
+j = next(n for n, l in enumerate(lines) if "dictionaries expand cleanly" in l)
+guard = "set -euo pipefail\n" + "\n".join(lines[i:j + 1])
+r = subprocess.run(["bash", "-c", guard], cwd=run, capture_output=True, text=True)
+assert r.returncode == 0 and "expand cleanly" in r.stdout, (
+    f"the token guard kills Allrun on a clean case (rc={r.returncode}): {r.stdout}{r.stderr}\n"
+    "it must be an `if`, never a bare pipeline")
+assert "| while read" not in ar, (
+    "a bare `grep ... | while read` under set -o pipefail exits 1 when grep finds nothing")
+sentinel = run / "system" / "ZZ_token_probe"
+sentinel.write_text("a @@STILL_A_TOKEN@@ b\n")
+r = subprocess.run(["bash", "-c", guard], cwd=run, capture_output=True, text=True)
+sentinel.unlink()
+assert r.returncode == 2 and "ZZ_token_probe" in r.stdout, (
+    "the token guard no longer catches an unsubstituted token - it would pass a broken case "
+    f"through to a full-scale mesh (rc={r.returncode})")
 assert (run / "system" / "INTERNAL_INTAKE").exists(), \
     "group J has no outletFilter patch, so Allrun must skip that check"
 

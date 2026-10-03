@@ -20,9 +20,16 @@ if [[ $RUN == 1 ]]; then
     foamDictionary "$d" -expand > /dev/null 2> "log.dict.$(basename "$d")" || {
       echo "DICTIONARY REJECTED: $d"; cat "log.dict.$(basename "$d")"; exit 2; }
   done
-  # the pattern is written as a regex so this file does not itself contain the token it hunts for
-  grep -rlE '@{2}' system/ constant/ 2>/dev/null | while read -r f; do
-    echo "UNSUBSTITUTED TOKEN in $f"; grep -nE '@{2}' "$f"; exit 2; done
+  # The pattern is written as a regex so this file does not itself contain the token it hunts for.
+  # This MUST be an `if`: under `set -e -o pipefail` a bare grep that finds nothing exits 1 and
+  # kills the script silently. That is exactly what happened to group J run #2 - every case died
+  # in two seconds with no output at all, because the smoke test passed.
+  if grep -rlE '@{2}' system/ constant/ > log.dict.tokens 2>/dev/null; then
+    echo "UNSUBSTITUTED TOKEN in:"; cat log.dict.tokens
+    while read -r f; do grep -nE '@{2}' "$f"; done < log.dict.tokens
+    exit 2
+  fi
+  rm -f log.dict.tokens
   echo "dictionaries expand cleanly"
 fi
 
