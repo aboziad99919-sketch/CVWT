@@ -106,8 +106,15 @@ cd = (run / "system" / "controlDict").read_text()
 assert "cuttingPlane" not in cd, "the cuttingPlane probe ignored its own bounds; it must not return"
 assert "regionType      faceZone" not in cd, (
     "the faceZone probe disagreed with the patch integral by 1.95x; it must not return")
-assert "Q_bedCell" in cd and "regionType      cellZone" in cd and "name            qCell" in cd, \
+assert "Q_bedCell" in cd and "select          cellZone;" in cd and "cellZone        qCell;" in cd, \
     "group J has no boundary patch, so flow must come from the cell-average probe"
+# OpenFOAM 12's volFieldValue (via polyCellSet) reads ONLY select/cellZone; the old regionType/name
+# spelling is still accepted by surfaceFieldValue but not here. Group J run #3 meshed five cases and
+# then died in foamRun on exactly this: "keyword select is undefined in dictionary .../Q_bedCell".
+qb = cd[cd.index("Q_bedCell"):]; qb = qb[:qb.index("}")]
+keys = [l.split()[0] for l in qb.splitlines()[1:] if l.split() and not l.strip().startswith("//")]
+assert "regionType" not in keys and "name" not in keys, (
+    "Q_bedCell must not use regionType/name - OpenFOAM 12 volFieldValue rejects it at foamRun start")
 assert "#includeFunc components" not in cd, (
     "components(U) is one more OpenFOAM caseDict that has to exist on the runner. Average the "
     "vector directly: read_cols strips the brackets and keeps the last column, which is Uz")

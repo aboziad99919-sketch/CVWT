@@ -232,8 +232,11 @@ QCELL_BLOCK = """    // Flow, measured without any surface at all: the area-aver
         writeInterval   1;
         log             false;
         writeFields     false;
-        regionType      cellZone;
-        name            qCell;
+        // OpenFOAM 12 volFieldValue selects cells through polyCellSet, which reads `select` and
+        // then `cellZone`. Unlike surfaceFieldValue it has NO fallback to regionType/name: group J
+        // run #3 meshed all five cases and then died in foamRun with "keyword select is undefined".
+        select          cellZone;
+        cellZone        qCell;
         operation       volAverage;
         fields          (U);
     }"""
