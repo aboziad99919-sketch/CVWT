@@ -218,11 +218,12 @@ def rotate_stl(src, dst, deg):
             out.append(line)
     open(dst, "w").writelines(out)
 
-QCELL_BLOCK = """    // Flow, measured without any surface at all: the area-average axial velocity in a slab of
-    // the bore. components(U) makes Uz a scalar field; volAverage over a region of constant
-    // cross-section is the mean axial velocity, so Q = Uz_avg * pi * BORE_R^2. No normal, no flip
-    // map, nothing outside the housing can reach it. The collector does the multiplication.
-    #includeFunc components(U)
+QCELL_BLOCK = """    // Flow, measured without any surface at all: the area-average velocity in a slab of the bore.
+    // volAverage over a region of constant cross-section is the mean velocity, so the axial
+    // component times pi * BORE_R^2 is the flow. No normal and no flip map, which is what the two
+    // earlier probes each got wrong. The vector is averaged directly rather than going through
+    // components(U): one fewer OpenFOAM caseDict that has to exist, and the collector already
+    // reads the last column of a row, which for a vector IS the z component.
     Q_bedCell
     {
         type            volFieldValue;
@@ -234,7 +235,7 @@ QCELL_BLOCK = """    // Flow, measured without any surface at all: the area-aver
         regionType      cellZone;
         name            qCell;
         operation       volAverage;
-        fields          (Uz);
+        fields          (U);
     }"""
 
 

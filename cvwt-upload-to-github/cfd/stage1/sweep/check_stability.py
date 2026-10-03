@@ -160,7 +160,8 @@ for c in cases:
     raw_x = dat(c, "Q_bedExit")
     if raw_x:
         series.append(("Q_bedExit (faceZone cross-check)", "m3/s", raw_x, qref, False))
-    # Q_bedCell is the area-average axial velocity in a slab of the bore, so the flow is
+    # Q_bedCell is the area-average velocity in a slab of the bore. read_cols strips the vector
+    # brackets and keeps the last column, which is the z component, so the flow is
     # Uz_avg * pi * BORE_R^2. No surface, no normal, no flip map. On a legacy case it sits beside
     # the trusted patch integral and the two should agree; on an internal-intake case it is the
     # only flow number there is. Sign follows Uz: upward outflow is POSITIVE here, where the patch
