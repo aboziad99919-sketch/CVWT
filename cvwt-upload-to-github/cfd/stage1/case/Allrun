@@ -11,6 +11,21 @@ step() { echo "+ $*"; if [[ $RUN == 1 ]]; then app=$1; [[ $app == mpirun ]] && a
 par()  { if [[ $NP -gt 1 ]]; then step mpirun -np "$NP" "$@" -parallel; else step "$@"; fi; }
 [[ -f log.foamRun ]] && { echo "log.foamRun exists - this case already ran; copy the case instead of re-running here."; exit 1; }
 
+# Dictionary smoke test, 2 seconds. foamDictionary -expand resolves every #include and
+# #includeFunc, so a function object that does not exist, or a token that was never substituted,
+# fails HERE instead of ten minutes later when foamRun finally reads controlDict. Group J lost a
+# whole five-case run to exactly that.
+if [[ $RUN == 1 ]]; then
+  for d in system/controlDict system/topoSetDict constant/fvModels; do
+    foamDictionary "$d" -expand > /dev/null 2> "log.dict.$(basename "$d")" || {
+      echo "DICTIONARY REJECTED: $d"; cat "log.dict.$(basename "$d")"; exit 2; }
+  done
+  # the pattern is written as a regex so this file does not itself contain the token it hunts for
+  grep -rlE '@{2}' system/ constant/ 2>/dev/null | while read -r f; do
+    echo "UNSUBSTITUTED TOKEN in $f"; grep -nE '@{2}' "$f"; exit 2; done
+  echo "dictionaries expand cleanly"
+fi
+
 step surfaceFeatures
 step blockMesh
 [[ $NP -gt 1 ]] && step decomposePar -copyZero
