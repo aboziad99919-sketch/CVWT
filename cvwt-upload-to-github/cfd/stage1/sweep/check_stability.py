@@ -172,6 +172,15 @@ for c in cases:
         except (KeyError, TypeError, ValueError): area = None
         if area:
             conv = [(tt, [-v[0] * area]) for tt, v in raw_c]
+            # Group J has no outletFilter patch, so the own-flow scale above was never taken and its
+            # full-scale flows (~0.01-0.05 m3/s) were judged against the RIG F0 flow, 1.2e-4 m3/s:
+            # a +-3 % oscillation printed as +-286 % and every flowing case read STILL DRIFTING.
+            # Same failure as the FS cases before, reached by a new path. A sealed case keeps F0.
+            if not raw_q and par.get("filter") != "SEALED":
+                vc = [x[0] for _, x in window(conv)]
+                if vc:
+                    qref = max(qref, abs(statistics.fmean(vc)))
+                    series = [(l, u, s, qref if u == "m3/s" else sc, k) for l, u, s, sc, k in series]
             series.append(("Q_bedCell (cell average x bore area)", "m3/s", conv, qref, False))
     if raw_p:
         d = lambda fn: [(tt, [fn(pv)]) for tt, pv in raw_p]
