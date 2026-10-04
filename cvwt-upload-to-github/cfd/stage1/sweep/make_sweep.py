@@ -255,6 +255,22 @@ DP_BLOCK = "\n".join(
         cellSet         p{side.capitalize()}Cells;
         operation       volAverage;
         fields          (p);
+    }}""" for side in ("below", "above")) + "\n" + "\n".join(
+    # ...and the FLOW on the same two slabs. The porous-check ducts passed (CEM stack within 1.3 %
+    # of Ergun), so if the flow below the cassette is far less than the flow above it, air is
+    # entering the bore between them and never crosses the filter.
+    f"""    Q_{side}Cassette
+    {{
+        type            volFieldValue;
+        libs            ("libfieldFunctionObjects.so");
+        writeControl    timeStep;
+        writeInterval   1;
+        log             false;
+        writeFields     false;
+        select          cellSet;
+        cellSet         p{side.capitalize()}Cells;
+        operation       volAverage;
+        fields          (U);
     }}""" for side in ("below", "above"))
 
 

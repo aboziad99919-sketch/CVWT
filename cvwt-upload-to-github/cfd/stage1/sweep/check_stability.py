@@ -196,6 +196,15 @@ for c in cases:
         below = {tt: v[0] for tt, v in raw_b}
         dpc = [(tt, [(v[0] - below[tt]) * RHO]) for tt, v in raw_a if tt in below]
         series.append(("dp_cassette (area average)", "Pa", dpc, q, False))
+    # Flow just below and just above the cassette, same slabs, same sign convention as Q_bedCell.
+    # Below << above means air enters the bore between them and bypasses the filter.
+    for side in ("below", "above"):
+        raw_s = dat(c, f"Q_{side}Cassette")
+        if raw_s:
+            try:    area = math.pi * float(par["BORE_R"]) ** 2
+            except (KeyError, TypeError, ValueError): continue
+            series.append((f"Q_{side}Cassette (slab average)", "m3/s",
+                           [(tt, [-v[0] * area]) for tt, v in raw_s], qref, False))
 
     rows = []
     for label, unit, ser, scale, skip in series:

@@ -95,7 +95,16 @@ def test_check_stability_reports_the_area_average_drop(tmp_path):
         with open(os.path.join(d, "volFieldValue.dat"), "w") as f:
             for t in range(1, 1501):
                 f.write(f"{t} {pk}\n")
+    for side, uz in (("below", 0.03), ("above", 0.08)):        # a bypass: more flow above than below
+        d = os.path.join(c, "postProcessing", f"Q_{side}Cassette", "0"); os.makedirs(d)
+        with open(os.path.join(d, "volFieldValue.dat"), "w") as f:
+            for t in range(1, 1501):
+                f.write(f"{t} (0 0 {uz})\n")
     out = subprocess.run([sys.executable, CS, str(tmp_path), "500"], capture_output=True,
                          text=True, check=True).stdout
     row = next(l for l in out.splitlines() if l.strip().startswith("dp_cassette"))
     assert "-1.8" in row, row
+    A = math.pi * 0.4104 ** 2
+    for side, uz in (("below", 0.03), ("above", 0.08)):
+        row = next(l for l in out.splitlines() if l.strip().startswith(f"Q_{side}Cassette"))
+        assert f"{-uz * A:.5g}" in row, (side, row)

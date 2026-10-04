@@ -155,6 +155,8 @@ assert "p_belowCassette" in cd and "p_aboveCassette" in cd and "select          
 for k in ("PB_Z0", "PB_Z1", "PA_Z0", "PA_Z1"):
     assert k in cp, f"{k} missing from caseParams"
 assert "pBelowCells" in ts and "pAboveCells" in ts, "pressure slabs not cut by topoSet"
+assert "Q_belowCassette" in cd and "Q_aboveCassette" in cd, \
+    "the flow below and above the cassette must both be measured, to catch flow that bypasses it"
 assert "cellZoneSet; action new; source setToCellZone; set pBelowCells" not in ts, \
     "the pressure slabs must stay cell SETS: the upper one overlaps qCell, and zones cannot overlap"
 assert (run / "correctLayers.py").exists() and "correctLayers.py" in ar, \
