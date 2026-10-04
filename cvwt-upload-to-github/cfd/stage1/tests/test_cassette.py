@@ -136,3 +136,12 @@ def test_midplane_vtk_is_read(tmp_path):
     pts, tris, F = pm.read_vtk(str(v))
     assert len(pts) == 4 and tris == [(0, 1, 2), (0, 2, 3)]
     assert F["p"] == [(1.0,), (2.0,), (3.0,), (4.0,)] and F["U"][3] == (0.0, 0.0, 4.0)
+
+
+def test_baffle_cassette_needs_no_layer_correction(tmp_path):
+    make(str(tmp_path), [4648, 4648, 2324])
+    (tmp_path / "system" / "createBafflesDict").write_text("// porous baffle\n")
+    before = coeffs(str(tmp_path))
+    r = run(str(tmp_path))
+    assert r.returncode == 0 and "porous baffle" in r.stdout
+    assert coeffs(str(tmp_path)) == before

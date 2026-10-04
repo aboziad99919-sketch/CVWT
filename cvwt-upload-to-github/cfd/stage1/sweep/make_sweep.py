@@ -242,6 +242,51 @@ QCELL_BLOCK = """    // Flow, measured without any surface at all: the area-aver
     }"""
 
 
+# OpenFOAM 12 createBaffles for the cassette baffle - identical to the dict the porous-check duct
+# verifies (tests/foam/porous_duct/make_variant.py), so what is tested is what runs.
+BAFFLE_DICT = """FoamFile { format ascii; class dictionary; object createBafflesDict; }
+internalFacesOnly true;
+fields true;
+baffles
+{
+    cassette
+    {
+        type        faceZone;
+        zoneName    cassette;
+        owner
+        {
+            name        cassette0;
+            type        cyclic;
+            neighbourPatch cassette1;
+            patchFields
+            {
+                p
+                {
+                    type        porousBafflePressure;
+                    patchType   cyclic;
+                    jump        uniform 0;
+                    D           %.8g;
+                    I           %.8g;
+                    length      1;
+                    value       uniform 0;
+                }
+            }
+        }
+        neighbour
+        {
+            name        cassette1;
+            type        cyclic;
+            neighbourPatch cassette0;
+            patchFields
+            {
+                $../../owner/patchFields;
+            }
+        }
+    }
+}
+"""
+
+
 DP_BLOCK = "\n".join(
     f"""    p_{side}Cassette
     {{
@@ -400,6 +445,23 @@ def create(case):
                   "      point1 (0 0 $PB_Z0); point2 (0 0 $PB_Z1); radius $BORE_R; }\n"
                   "    { name pAboveCells; type cellSet; action new; source cylinderToCell;\n"
                   "      point1 (0 0 $PA_Z0); point2 (0 0 $PA_Z1); radius $BORE_R; }")
+    if stack and "SEALED" not in grades:
+        # The cassette as ONE porous baffle, not porous zones. porous-check run #3 proved that a
+        # porous zone a few cells thick loses most of its resistance in OpenFOAM: C3 on 1 / 2 / 3 / 5
+        # cells gave -98 / -25 / -19 / -11 % against Ergun, and the cassette meshed exactly as
+        # group J meshes it gave -72 % (group J itself: -69 %). A baffle applies the jump
+        # (D mu U + 1/2 I rho U^2) with D = sum(t*d), I = sum(t*f) on a zero-thickness face set,
+        # exact on any mesh. The layer cellZones are kept (volume for later capture modelling) but
+        # carry no resistance. SEALED stays a porous zone: 1e12 survives any resolution loss.
+        Db = sum((bounds[i] - bounds[i - 1]) * float(FILTERS[g]["Darcy_d_1/m2"]) for i, g in enumerate(grades, 1))
+        Ib = sum((bounds[i] - bounds[i - 1]) * float(FILTERS[g]["Forchheimer_f_1/m"]) for i, g in enumerate(grades, 1))
+        pm = ["// the cassette is a porous baffle (system/createBafflesDict), not porous zones"]
+        lp.append(f"BAFFLE_D    {Db:.8g};   // sum(t*d) over the cassette layers [1/m]\n"
+                  f"BAFFLE_I    {Ib:.8g};   // sum(t*f) [-]\n"
+                  f"BAFFLE_Z    {0.5 * (bounds[0] + bounds[-1]):.5f};   // baffle plane, mid-cassette")
+        fz.append("    { name cassette; type faceZoneSet; action new; source searchableSurfaceToFaceZone;\n"
+                  "      surface searchableDisk; origin (0 0 $BAFFLE_Z); normal (0 0 1); radius $BORE_R; }")
+        (dst / "system" / "createBafflesDict").write_text(BAFFLE_DICT % (Db, Ib))
     subs["LAYERPARAMS"]   = "\n".join(lp)
     subs["FILTERZONES"]   = "\n".join(fz)
     subs["POROUSMODELS"]  = "\n".join(pm)

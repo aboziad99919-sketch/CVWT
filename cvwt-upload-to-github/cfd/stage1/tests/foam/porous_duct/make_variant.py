@@ -12,6 +12,49 @@ stack" from "the flow reaches the measuring slab by another route".
 import json, os, shutil, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+# OpenFOAM 12 createBaffles: a cyclic pair on faceZone "cassette", porousBafflePressure on p
+# (TJunctionFan tutorial layout; jump = -(D nu + I/2 |Un|) |Un| L, times rho for pressure in Pa).
+BAFFLE_DICT = """FoamFile { format ascii; class dictionary; object createBafflesDict; }
+internalFacesOnly true;
+fields true;
+baffles
+{
+    cassette
+    {
+        type        faceZone;
+        zoneName    cassette;
+        owner
+        {
+            name        cassette0;
+            type        cyclic;
+            neighbourPatch cassette1;
+            patchFields
+            {
+                p
+                {
+                    type        porousBafflePressure;
+                    patchType   cyclic;
+                    jump        uniform 0;
+                    D           %.8g;
+                    I           %.8g;
+                    length      1;
+                    value       uniform 0;
+                }
+            }
+        }
+        neighbour
+        {
+            name        cassette1;
+            type        cyclic;
+            neighbourPatch cassette0;
+            patchFields
+            {
+                $../../owner/patchFields;
+            }
+        }
+    }
+}
+"""
 out, U = sys.argv[1], float(sys.argv[2])
 layers = [tuple(float(v) for v in s.split(":")) for s in sys.argv[3:]]
 assert layers, "give at least one layer x0:x1:d:f"
@@ -36,6 +79,17 @@ def rewrite(path, start, body):
     t = open(path).read()
     open(path, "w").write(t[:t.index(start)] + body + "\n")
 
+if os.environ.get("BAFFLE"):
+    # The whole stack as ONE porous baffle: a zero-thickness cyclic pair whose pressure jump is
+    # (D mu U + 1/2 I rho U^2) L, with D = sum(t*d), I = sum(t*f), L = 1 - exactly the Ergun sum,
+    # independent of how many cells a layer would have had. Placed at the stack's lower face, just
+    # off the cell face so the owner/neighbour line crosses it unambiguously.
+    D = sum((x1 - x0) * d for x0, x1, d, f in layers); I = sum((x1 - x0) * f for x0, x1, d, f in layers)
+    xb = layers[0][0] + 1e-3
+    zones = (f"    {{ name cassette; type faceZoneSet; action new; source searchableSurfaceToFaceZone;\n"
+             f"      surface searchablePlate; origin ({xb} -0.001 -0.001); span (0 0.022 0.022); }}")
+    models = "// the stack is a porous baffle (system/createBafflesDict), not a porous zone"
+    open(os.path.join(out, "system", "createBafflesDict"), "w").write(BAFFLE_DICT % (D, I))
 rewrite(os.path.join(out, "system", "topoSetDict"), "actions", f"actions\n(\n{zones}\n);")
 rewrite(os.path.join(out, "constant", "fvModels"), "biocharBed", models)
 # Optional coarse mesh (env DX, metres): a 600 mm duct cut into DX-long cells, so a layer can be

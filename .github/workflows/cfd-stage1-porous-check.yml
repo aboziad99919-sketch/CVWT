@@ -57,6 +57,18 @@ jobs:
             U: "0.082"
             dx: "0.015"
             layers: "0.255:0.285:9.2083e5:303.33 0.285:0.315:4.4367e6:701.17 0.315:0.33:7.5683e7:4485"
+          # The fix: the same cassette as ONE porous baffle (zero thickness, exact Ergun jump) on the
+          # same coarse 15 mm cells that lost 72 % of its resistance as porous zones.
+          - name: cem_baffle
+            U: "0.082"
+            dx: "0.015"
+            baffle: "1"
+            layers: "0.30:0.325:1.105e6:364 0.325:0.35:5.324e6:841.4 0.35:0.375:4.541e7:2691"
+          - name: f2_baffle
+            U: "0.0235"
+            dx: "0.015"
+            baffle: "1"
+            layers: "0.30:0.325:1.245e8:1.0563e4 0.325:0.35:1.245e8:1.0563e4 0.35:0.375:1.245e8:1.0563e4"
     steps:
       - uses: actions/checkout@v4
       - name: Install OpenFOAM 12
@@ -69,12 +81,17 @@ jobs:
           set +e
           source /opt/openfoam12/etc/bashrc
           set -e
-          DX="${{ matrix.dx }}" python3 make_variant.py "/tmp/${{ matrix.name }}" ${{ matrix.U }} ${{ matrix.layers }}
+          DX="${{ matrix.dx }}" BAFFLE="${{ matrix.baffle }}" python3 make_variant.py "/tmp/${{ matrix.name }}" ${{ matrix.U }} ${{ matrix.layers }}
           cd "/tmp/${{ matrix.name }}"
-          for c in blockMesh topoSet foamRun; do
-            $c > log.$c 2>&1 || { echo "FAILED: $c"; tail -30 log.$c; exit 1; }
-          done
-          grep -E "cellZoneSet filter[0-9]+ now size" log.topoSet
+          run() { "$@" > "log.$1" 2>&1 || { echo "FAILED: $*"; tail -40 "log.$1"; exit 1; }; }
+          run blockMesh
+          run topoSet
+          if [ -f system/createBafflesDict ]; then
+            run createBaffles -overwrite
+            grep -E "cassette[01]" constant/polyMesh/boundary -A4 | grep -E "type|nFaces" || true
+          fi
+          run foamRun
+          grep -E "Zone(Set)? (filter[0-9]+|cassette) now size" log.topoSet || true   # a baffle case has no filter zones
           set -o pipefail                       # a failed check must fail the job, not hide behind tee
           python3 verify.py | tee verify.txt
         working-directory: ${{ env.DUCT }}

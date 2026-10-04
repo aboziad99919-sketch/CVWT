@@ -90,13 +90,27 @@ assert z["LZ1_1"] == z["LZ0_2"] and z["LZ1_2"] == z["LZ0_3"], "cassette layers m
 assert par["scale"] == 12.0 and abs(z["FILTER_Z0"] - 0.324) < 1e-9, \
     "group J runs at full scale, so the cassette floor sits at 0.324 m"
 
-# three media, in flow order coarse -> fine
+# three media, in flow order coarse -> fine - applied as ONE porous baffle, not porous zones.
+# porous-check run #3: zones a few cells thick lost 11-98 % of their resistance (the cassette as
+# group J meshes it: -72 %); a baffle applies the exact Ergun jump on any mesh.
 fv = (run / "constant" / "fvModels").read_text()
-assert fv.count("type            porosityForce;") == 3, "the cassette needs one porous model per grade"
+assert "type            porosityForce;" not in fv, \
+    "the CEM cassette must not be porous zones: 1-2 cell layers lose most of their resistance"
 for i, gid in enumerate(("C1", "C2", "C3"), 1):
-    assert f"cellZone        filter{i};" in fv, f"filter{i} zone not referenced"
     assert f"// {gid}" in cp, f"{gid} coefficients not written for layer {i}"
+cb = (run / "system" / "createBafflesDict").read_text()
+_g = {"C1": (1.105e6, 364.0), "C2": (5.324e6, 841.4), "C3": (4.541e7, 2691.0)}
+_D = 0.025 * sum(d for d, f in _g.values()); _I = 0.025 * sum(f for d, f in _g.values())
+_Dw = float(cb.split("D           ")[1].split(";")[0]); _Iw = float(cb.split("I           ")[1].split(";")[0])
+assert abs(_Dw / _D - 1) < 1e-6 and abs(_Iw / _I - 1) < 1e-6, (
+    f"baffle D, I = {_Dw}, {_Iw}; must be the cassette sums sum(t*d) = {_D}, sum(t*f) = {_I}")
+assert "type        porousBafflePressure;" in cb and "length      1;" in cb and "type        cyclic;" in cb
 ts = (run / "system" / "topoSetDict").read_text()
+assert "name cassette; type faceZoneSet" in ts and "surface searchableDisk;" in ts and "radius $BORE_R" in ts, \
+    "the baffle faceZone must be a disk confined to the bore"
+assert z["FILTER_Z0"] < float(cp.split("BAFFLE_Z")[1].split(";")[0]) < z["FILTER_Z1"], "baffle must sit in the cassette"
+ar0 = (run / "Allrun").read_text()
+assert "createBaffles -overwrite" in ar0 and ar0.index("par topoSet") < ar0.index("createBaffles") < ar0.index("par foamRun")
 for i in (1, 2, 3):
     assert f"name filter{i};" in ts, f"filter{i} cellZone not cut by topoSet"
 assert "name qCell;" in ts, "the flow-measuring cellZone is missing"

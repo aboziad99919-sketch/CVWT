@@ -38,6 +38,8 @@ step blockMesh
 [[ $NP -gt 1 ]] && step decomposePar -copyZero
 par snappyHexMesh -overwrite
 par topoSet
+# A cassette modelled as a porous baffle: turn its faceZone into the cyclic pair carrying the jump.
+[[ -f system/createBafflesDict ]] && par createBaffles -overwrite
 par checkMesh
 if [[ $RUN == 1 ]]; then
   N=$(grep -m1 -E "^\s*cells:" log.checkMesh | awk '{print $2}'); echo "cells = $N"
