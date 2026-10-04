@@ -196,6 +196,13 @@ for c in cases:
         below = {tt: v[0] for tt, v in raw_b}
         dpc = [(tt, [(v[0] - below[tt]) * RHO]) for tt, v in raw_a if tt in below]
         series.append(("dp_cassette (area average)", "Pa", dpc, q, False))
+    # Total-pressure drop across the cassette on the same slabs (pTot is already in Pa). This is the
+    # energy the cassette removes; with a jet arriving from below it can exceed the static drop.
+    raw_tb, raw_ta = dat(c, "pT_belowCassette"), dat(c, "pT_aboveCassette")
+    if raw_tb and raw_ta:
+        tb = {tt: v[0] for tt, v in raw_tb}
+        series.append(("dpTot_cassette (area average)", "Pa",
+                       [(tt, [v[0] - tb[tt]]) for tt, v in raw_ta if tt in tb], q, False))
     # Flow just below and just above the cassette, same slabs, same sign convention as Q_bedCell.
     # Below << above means air enters the bore between them and bypasses the filter.
     for side in ("below", "above"):

@@ -104,7 +104,35 @@ def test_check_stability_reports_the_area_average_drop(tmp_path):
                          text=True, check=True).stdout
     row = next(l for l in out.splitlines() if l.strip().startswith("dp_cassette"))
     assert "-1.8" in row, row
+    # total-pressure slabs (already Pa): drop 2.3 Pa
+    for side, pt in (("below", -1.0), ("above", -3.3)):
+        d = os.path.join(c, "postProcessing", f"pT_{side}Cassette", "0"); os.makedirs(d)
+        with open(os.path.join(d, "volFieldValue.dat"), "w") as f:
+            for t in range(1, 1501):
+                f.write(f"{t} {pt}" + chr(10))
+    out = subprocess.run([sys.executable, CS, str(tmp_path), "500"], capture_output=True,
+                         text=True, check=True).stdout
+    row = next(l for l in out.splitlines() if l.strip().startswith("dpTot_cassette"))
+    assert "-2.3" in row, row
     A = math.pi * 0.4104 ** 2
     for side, uz in (("below", 0.03), ("above", 0.08)):
         row = next(l for l in out.splitlines() if l.strip().startswith(f"Q_{side}Cassette"))
         assert f"{-uz * A:.5g}" in row, (side, row)
+
+
+def test_midplane_vtk_is_read(tmp_path):
+    """plot_midplane reads the legacy-VTK polydata OpenFOAM's surface writer produces."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("pm", os.path.join(HERE, "..", "sweep", "plot_midplane.py"))
+    pm = importlib.util.module_from_spec(spec); spec.loader.exec_module(pm)
+    v = tmp_path / "cut.vtk"
+    v.write_text("\n".join([
+        "# vtk DataFile Version 2.0", "cut", "ASCII", "DATASET POLYDATA",
+        "POINTS 4 float", "0 0 0", "1 0 0", "1 0 1", "0 0 1",
+        "POLYGONS 1 5", "4 0 1 2 3",
+        "POINT_DATA 4", "FIELD attributes 2",
+        "p 1 4 float", "1", "2", "3", "4",
+        "U 3 4 float", "0 0 1", "0 0 2", "0 0 3", "0 0 4", ""]))
+    pts, tris, F = pm.read_vtk(str(v))
+    assert len(pts) == 4 and tris == [(0, 1, 2), (0, 2, 3)]
+    assert F["p"] == [(1.0,), (2.0,), (3.0,), (4.0,)] and F["U"][3] == (0.0, 0.0, 4.0)

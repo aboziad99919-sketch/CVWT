@@ -155,6 +155,13 @@ assert "p_belowCassette" in cd and "p_aboveCassette" in cd and "select          
 for k in ("PB_Z0", "PB_Z1", "PA_Z0", "PA_Z1"):
     assert k in cp, f"{k} missing from caseParams"
 assert "pBelowCells" in ts and "pAboveCells" in ts, "pressure slabs not cut by topoSet"
+# run #7: total-pressure balance and a mid-plane picture. pTot must be computed EVERY iteration
+# (the stock caseDict only does it at write times, which would feed the slab averages a stale field).
+pt = cd[cd.index("pTotField"):]; pt = pt[:pt.index("}")]
+assert "executeControl  timeStep;" in pt and "calcTotal       yes;" in pt and "result          pTot;" in pt, pt
+assert cd.index("pTotField") < cd.index("pT_belowCassette"), "pTot must be computed before it is averaged"
+assert "pT_belowCassette" in cd and "pT_aboveCassette" in cd, "total-pressure slabs missing"
+assert "cutPlaneSurface(" in cd and "name=midPlane" in cd, "mid-plane flow picture missing"
 assert "Q_belowCassette" in cd and "Q_aboveCassette" in cd, \
     "the flow below and above the cassette must both be measured, to catch flow that bypasses it"
 assert "cellZoneSet; action new; source setToCellZone; set pBelowCells" not in ts, \

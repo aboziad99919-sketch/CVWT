@@ -271,7 +271,43 @@ DP_BLOCK = "\n".join(
         cellSet         p{side.capitalize()}Cells;
         operation       volAverage;
         fields          (U);
-    }}""" for side in ("below", "above"))
+    }}""" for side in ("below", "above")) + """
+    // Total pressure p + 1/2 |U|^2, in Pa. Run #7 showed no leak (flow above the cassette = flow
+    // through it) yet the STATIC drop is 0.74 Pa where Ergun needs ~2.3 Pa: the working explanation
+    // is a jet from the intake hitting the cassette from below, whose kinetic energy pays part of
+    // the loss. If so, the TOTAL-pressure drop closes against Ergun. executeControl timeStep: the
+    // stock caseDict computes the field only at write times, and the slab averages need it every
+    // iteration.
+    pTotField
+    {
+        type            pressure;
+        libs            ("libfieldFunctionObjects.so");
+        executeControl  timeStep;
+        writeControl    writeTime;
+        calcTotal       yes;
+        calcCoeff       no;
+        rho             rhoInf;
+        rhoInf          1.2;
+        pRef            0;
+        result          pTot;
+    }
+""" + "\n".join(
+    f"""    pT_{side}Cassette
+    {{
+        type            volFieldValue;
+        libs            ("libfieldFunctionObjects.so");
+        writeControl    timeStep;
+        writeInterval   1;
+        log             false;
+        writeFields     false;
+        select          cellSet;
+        cellSet         p{side.capitalize()}Cells;
+        operation       volAverage;
+        fields          (pTot);
+    }}""" for side in ("below", "above")) + """
+    // A picture of the flow: the y = 0 plane through the axis, written at every write time, so the
+    // jet under the cassette (or its absence) can be seen rather than inferred.
+    #includeFunc cutPlaneSurface(point=(0 0 0), normal=(0 1 0), fields=(p U pTot), name=midPlane)"""
 
 
 def create(case):
