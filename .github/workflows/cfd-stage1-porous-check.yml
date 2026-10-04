@@ -1,0 +1,70 @@
+# Porous-model verification on a 1-D duct: does OpenFOAM 12 apply the Ergun resistance we specify,
+# for one layer and for a three-layer stack? ~5 minutes in total, manual trigger only.
+#
+# Why now: group J run #6 measured 0.74 Pa across the three-grade CEM cassette (area average)
+# where the measured flow needs ~2.3 Pa by Ergun, and J1_F2 read 17 % low. Every earlier group
+# matched Ergun within ~5 %. If these ducts pass, the porous model is right and the cause is in
+# the group J flow path; if the stacks fail, it is in how multiple porous layers are applied.
+name: cfd-stage1-porous-check
+on:
+  workflow_dispatch:
+env:
+  DUCT: cvwt-upload-to-github/cfd/stage1/tests/foam/porous_duct
+jobs:
+  duct:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # the original check: one 18 mm F2 bed at 0.06 m/s
+          - name: f2_single
+            U: "0.06"
+            layers: "0.091:0.109:1.245e8:1.0563e4"
+          # J1_F2: three 25 mm F2 layers at its measured face velocity
+          - name: f2_three
+            U: "0.0235"
+            layers: "0.06:0.085:1.245e8:1.0563e4 0.085:0.11:1.245e8:1.0563e4 0.11:0.135:1.245e8:1.0563e4"
+          # J1_CEM: C1 / C2 / C3, 25 mm each, at its measured face velocity
+          - name: cem_three
+            U: "0.082"
+            layers: "0.06:0.085:1.105e6:364 0.085:0.11:5.324e6:841.4 0.11:0.135:4.541e7:2691"
+          # the same cassette, single grade C3 only, to see whether one fine layer alone is right
+          - name: c3_single
+            U: "0.082"
+            layers: "0.11:0.135:4.541e7:2691"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install OpenFOAM 12
+        run: |
+          sudo sh -c "wget -qO - https://dl.openfoam.org/gpg.key > /etc/apt/trusted.gpg.d/openfoam.asc"
+          sudo add-apt-repository -y http://dl.openfoam.org/ubuntu
+          sudo apt-get update -qq && sudo apt-get install -y openfoam12
+      - name: Run duct ${{ matrix.name }}
+        run: |
+          set +e
+          source /opt/openfoam12/etc/bashrc
+          set -e
+          python3 make_variant.py "/tmp/${{ matrix.name }}" ${{ matrix.U }} ${{ matrix.layers }}
+          cd "/tmp/${{ matrix.name }}"
+          for c in blockMesh topoSet foamRun; do
+            $c > log.$c 2>&1 || { echo "FAILED: $c"; tail -30 log.$c; exit 1; }
+          done
+          grep -E "cellZoneSet filter[0-9]+ now size" log.topoSet
+          set -o pipefail                       # a failed check must fail the job, not hide behind tee
+          python3 verify.py | tee verify.txt
+        working-directory: ${{ env.DUCT }}
+      - name: Put it in the run summary
+        if: always()
+        run: |
+          { echo "### duct ${{ matrix.name }}"; echo '```'; cat "/tmp/${{ matrix.name }}/verify.txt" 2>/dev/null || echo "(no result)"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: duct-${{ matrix.name }}
+          path: |
+            /tmp/${{ matrix.name }}/log.*
+            /tmp/${{ matrix.name }}/verify.txt
+            /tmp/${{ matrix.name }}/postProcessing/**
+          retention-days: 30
