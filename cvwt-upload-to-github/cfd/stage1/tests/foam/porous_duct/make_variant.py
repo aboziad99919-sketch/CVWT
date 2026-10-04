@@ -38,6 +38,18 @@ def rewrite(path, start, body):
 
 rewrite(os.path.join(out, "system", "topoSetDict"), "actions", f"actions\n(\n{zones}\n);")
 rewrite(os.path.join(out, "constant", "fvModels"), "biocharBed", models)
+# Optional coarse mesh (env DX, metres): a 600 mm duct cut into DX-long cells, so a layer can be
+# resolved by exactly as few cells as the group J mesh gives it. Run #8 showed the one-cell C3 layer
+# there delivering ~0.5 Pa where Ergun needs ~2 Pa; this tests that in isolation.
+if os.environ.get("DX"):
+    dx = float(os.environ["DX"]); L = 0.6; n = int(round(L / dx))
+    assert abs(n * dx - L) < 1e-9, f"DX {dx} does not divide the {L} m duct"
+    bm = os.path.join(out, "system", "blockMeshDict"); t = open(bm).read()
+    t = t.replace("(0.2 0 0) (0.2 0.02 0)", f"({L} 0 0) ({L} 0.02 0)") \
+         .replace("(0.2 0 0.02) (0.2 0.02 0.02)", f"({L} 0 0.02) ({L} 0.02 0.02)") \
+         .replace("(200 8 8)", f"({n} 8 8)")
+    assert f"({n} 8 8)" in t and f"({L} 0 0)" in t, "blockMeshDict layout changed - update make_variant"
+    open(bm, "w").write(t)
 up = os.path.join(out, "0", "U"); t = open(up).read()
 open(up, "w").write(t.replace("uniform (0.06 0 0)", f"uniform ({U:g} 0 0)"))
 json.dump({"U": U, "layers": [{"t": x1 - x0, "d": d, "f": f} for x0, x1, d, f in layers]},

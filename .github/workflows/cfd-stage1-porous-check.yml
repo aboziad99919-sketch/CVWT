@@ -34,6 +34,29 @@ jobs:
           - name: c3_single
             U: "0.082"
             layers: "0.11:0.135:4.541e7:2691"
+          # Resolution: the same C3 resistance (t*d, t*f identical) on 1, 2, 3 and 5 cells, and the
+          # whole cassette meshed exactly as group J meshes it (2 / 2 / 1 rows of 15 mm, corrected).
+          # Run #8 showed the one-row C3 there giving ~0.5 Pa where Ergun needs ~2 Pa.
+          - name: c3_1cell
+            U: "0.082"
+            dx: "0.015"
+            layers: "0.30:0.315:7.5683e7:4485"
+          - name: c3_2cell
+            U: "0.082"
+            dx: "0.0125"
+            layers: "0.30:0.325:4.541e7:2691"
+          - name: c3_3cell
+            U: "0.082"
+            dx: "0.0075"
+            layers: "0.30:0.3225:5.0456e7:2990"
+          - name: c3_5cell
+            U: "0.082"
+            dx: "0.005"
+            layers: "0.30:0.325:4.541e7:2691"
+          - name: cem_as_groupJ
+            U: "0.082"
+            dx: "0.015"
+            layers: "0.255:0.285:9.2083e5:303.33 0.285:0.315:4.4367e6:701.17 0.315:0.33:7.5683e7:4485"
     steps:
       - uses: actions/checkout@v4
       - name: Install OpenFOAM 12
@@ -46,7 +69,7 @@ jobs:
           set +e
           source /opt/openfoam12/etc/bashrc
           set -e
-          python3 make_variant.py "/tmp/${{ matrix.name }}" ${{ matrix.U }} ${{ matrix.layers }}
+          DX="${{ matrix.dx }}" python3 make_variant.py "/tmp/${{ matrix.name }}" ${{ matrix.U }} ${{ matrix.layers }}
           cd "/tmp/${{ matrix.name }}"
           for c in blockMesh topoSet foamRun; do
             $c > log.$c 2>&1 || { echo "FAILED: $c"; tail -30 log.$c; exit 1; }
