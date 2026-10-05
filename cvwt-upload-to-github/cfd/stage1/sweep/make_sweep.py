@@ -19,7 +19,7 @@ def k_omega(U, I=0.05, l=0.01, cmu=0.09):
 cases = []
 def add(group, fid, t_mm, U, az, top, mesh="medium", core="holes", why="", bed_z0=None, intake=None,
         skirt=None, stack=None, tube_mm=None,
-        bore_mm=17.0, slot_r_mm=16.0, scale=1.0):
+        bore_mm=17.0, slot_r_mm=16.0, scale=1.0, tsr=None):
     """core: 'holes' = perforated cylinder (design as drawn); 'solid' = unperforated cylinder (reversed layout).
 
     bed_z0 fixes the bed BOTTOM [m]; the top then follows as bed_z0 + thickness. Left as None the bed
@@ -34,10 +34,11 @@ def add(group, fid, t_mm, U, az, top, mesh="medium", core="holes", why="", bed_z
     if intake: cid += f"_{intake}"
     if skirt:  cid += f"_{skirt}"
     if tube_mm: cid += f"_t{int(round(tube_mm))}"
+    if tsr is not None: cid += f"_tsr{'m' if tsr < 0 else 'p'}{int(round(abs(tsr) * 100)):03d}"
     cases.append(dict(case_id=cid, group=group, filter=fid, thickness_mm=t_mm, U_mps=U, azimuth_deg=az,
                       intake=intake, skirt=skirt, stack=stack, tube_mm=tube_mm,
                       top=top, core=core, mesh=mesh, purpose=why, bed_z0=bed_z0,
-                      bore_mm=bore_mm, slot_r_mm=slot_r_mm, scale=scale))
+                      bore_mm=bore_mm, slot_r_mm=slot_r_mm, scale=scale, tsr=tsr))
 
 # 1A  map the core driving pressure (the key unknown of the pre-screen) - bed sealed or empty
 for az in (0, 22.5, 45, 67.5):
@@ -93,6 +94,16 @@ for grp, bore in (("R3", 17.0), ("R4", 34.0)):
     for fid in ("F1", "F2", "F3"):
         add(grp, fid, 18, 4, 0, "open", core="solid", bore_mm=bore, slot_r_mm=16.0,
             why=f"sealed core, open top, bore r={bore:.0f} mm: head gain x area gain")
+
+# S2 STAGE 2 - the rotor TURNS (steady MRF). R4_F2, the sealed-core Ø68 design baseline at rig scale,
+#    with the fin region as a rotating frame at tip speed ratio lambda = omega R / U, R = 56 mm.
+#    The rotor is passive, so its speed is where the wind's torque falls to zero: lambda 0 gives the
+#    static torque and its SIGN fixes the direction the wind drives it; both directions are run so
+#    one pass settles that, and the zero crossing on the driven side is the freewheel speed.
+#    R4_F2 has a single 18 mm bed (~14 cells), so it is unaffected by the thin-layer porous loss.
+for lam in (0.0, 0.2, 0.4, 0.6, -0.2, -0.4):
+    add("S2", "F2", 18, 4, 0, "open", core="solid", bore_mm=34.0, slot_r_mm=16.0, tsr=lam,
+        why=f"rotating rotor (MRF), tip speed ratio {lam:+.1f}: torque, freewheel speed, flow")
 
 # 1FS full scale. Pressure does not scale: head = Cp x 0.5*rho*U^2, and U is 4 m/s at any size, so
 #     the ~6.4 Pa available is the same on a 0.31 m rig and a 3.68 m tower. What scales is the bed -
@@ -467,6 +478,26 @@ def create(case):
         fz.append("    { name cassette; type faceZoneSet; action new; source searchableSurfaceToFaceZone;\n"
                   "      surface searchableDisk; origin (0 0 $BAFFLE_Z); normal (0 0 1); radius $BORE_R; }")
         (dst / "system" / "createBafflesDict").write_text(BAFFLE_DICT % (Db, Ib, BAFFLE_RELAX))
+    if case.get("tsr") is not None:
+        # Steady MRF (OpenFOAM 12: constant/MRFProperties; rotating walls MRFnoSlip in 0/U, as in the
+        # mixerVessel2DMRF tutorial). The zone is the annulus swept by the fins - fins span r 13.9 to
+        # 56 mm and z 75 to 307 mm - from mid-gap to the stationary core (12.95 mm) out to 60 mm.
+        R_tip = 0.056 * S
+        omega = case["tsr"] * case["U_mps"] / R_tip
+        fz.append(f"    {{ name rotorCells; type cellSet; action new; source cylinderAnnulusToCell;\n"
+                  f"      point1 (0 0 {0.070 * S:.5f}); point2 (0 0 {0.312 * S:.5f});"
+                  f" innerRadius {0.01295 * S:.5f}; outerRadius {0.060 * S:.5f}; }}\n"
+                  f"    {{ name rotor; type cellZoneSet; action new; source setToCellZone; set rotorCells; }}")
+        (dst / "constant" / "MRFProperties").write_text(
+            'FoamFile { format ascii; class dictionary; location "constant"; object MRFProperties; }\n'
+            f"// tip speed ratio {case['tsr']:+.2f} at U = {case['U_mps']} m/s, R = {R_tip:.4f} m\n"
+            f"MRF\n{{\n    cellZone    rotor;\n    origin      (0 0 0);\n    axis        (0 0 1);\n"
+            f"    omega       {omega:.6g};   // rad/s, positive = counter-clockwise seen from above\n}}\n")
+        u = dst / "0" / "U"; t = u.read_text()
+        assert "    cvwtWalls    { type noSlip; }" in t, "0/U wall entry changed - update the MRF patch"
+        u.write_text(t.replace("    cvwtWalls    { type noSlip; }",
+                               '    "(fins|caps)" { type MRFnoSlip; }    // rotor walls turn with the frame\n'
+                               "    cvwtWalls    { type noSlip; }"))
     subs["LAYERPARAMS"]   = "\n".join(lp)
     subs["FILTERZONES"]   = "\n".join(fz)
     subs["POROUSMODELS"]  = "\n".join(pm)
