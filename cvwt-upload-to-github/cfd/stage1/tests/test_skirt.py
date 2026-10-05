@@ -90,29 +90,27 @@ assert z["LZ1_1"] == z["LZ0_2"] and z["LZ1_2"] == z["LZ0_3"], "cassette layers m
 assert par["scale"] == 12.0 and abs(z["FILTER_Z0"] - 0.324) < 1e-9, \
     "group J runs at full scale, so the cassette floor sits at 0.324 m"
 
-# three media, in flow order coarse -> fine - applied as ONE porous baffle, not porous zones.
+# three media, in flow order coarse -> fine - carried by ONE equivalent thick porous zone.
 # porous-check run #3: zones a few cells thick lost 11-98 % of their resistance (the cassette as
-# group J meshes it: -72 %); a baffle applies the exact Ergun jump on any mesh.
+# group J meshes it: -72 %); zones ~20-25 cells thick land within 1-3 %. The porous baffle
+# alternative diverged at every relaxation tried (runs #6-#7).
 fv = (run / "constant" / "fvModels").read_text()
-assert "type            porosityForce;" not in fv, \
-    "the CEM cassette must not be porous zones: 1-2 cell layers lose most of their resistance"
+assert fv.count("type            porosityForce;") == 1 and "cassetteEquivalent" in fv, \
+    "the CEM cassette must be one equivalent thick zone, not three thin ones"
 for i, gid in enumerate(("C1", "C2", "C3"), 1):
     assert f"// {gid}" in cp, f"{gid} coefficients not written for layer {i}"
-cb = (run / "system" / "createBafflesDict").read_text()
 _g = {"C1": (1.105e6, 364.0), "C2": (5.324e6, 841.4), "C3": (4.541e7, 2691.0)}
-_D = 0.025 * sum(d for d, f in _g.values()); _I = 0.025 * sum(f for d, f in _g.values())
-_Dw = float(cb.split("D           ")[1].split(";")[0]); _Iw = float(cb.split("I           ")[1].split(";")[0])
-assert abs(_Dw / _D - 1) < 1e-6 and abs(_Iw / _I - 1) < 1e-6, (
-    f"baffle D, I = {_Dw}, {_Iw}; must be the cassette sums sum(t*d) = {_D}, sum(t*f) = {_I}")
-assert "type        porousBafflePressure;" in cb and "length      1;" in cb and "type        cyclic;" in cb
+_tz = {k: float(cp.split(k)[1].split(";")[0]) for k in ("THICK_Z0", "THICK_Z1", "THICK_D", "THICK_F")}
+_T = _tz["THICK_Z1"] - _tz["THICK_Z0"]
+assert abs(_T * _tz["THICK_D"] / (0.025 * sum(d for d, f in _g.values())) - 1) < 1e-6 and \
+       abs(_T * _tz["THICK_F"] / (0.025 * sum(f for d, f in _g.values())) - 1) < 1e-6, \
+    "thick zone must carry exactly the cassette's sum(t*d) and sum(t*f)"
+assert _T / (0.02016 * 12 / 16) > 20, f"thick zone {1000*_T:.0f} mm is not >= 20 cells at level 4"
+assert _tz["THICK_Z0"] > 0.270 and _tz["THICK_Z1"] < 0.696, \
+    "thick zone must stay inside the bore: above the intake slot (270 mm), below the tube inlet (696 mm)"
 ts = (run / "system" / "topoSetDict").read_text()
-assert "name cassette; type faceZoneSet" in ts and "surface searchableDisk;" in ts and "radius $BORE_R" in ts, \
-    "the baffle faceZone must be a disk confined to the bore"
-assert z["FILTER_Z0"] < float(cp.split("BAFFLE_Z")[1].split(";")[0]) < z["FILTER_Z1"], "baffle must sit in the cassette"
-ar0 = (run / "Allrun").read_text()
-assert "createBaffles -overwrite" in ar0 and ar0.index("par topoSet") < ar0.index("createBaffles") < ar0.index("par foamRun")
-for i in (1, 2, 3):
-    assert f"name filter{i};" in ts, f"filter{i} cellZone not cut by topoSet"
+assert "name filter1;" in ts and "$THICK_Z0" in ts, "the equivalent zone is not cut by topoSet"
+assert not (run / "system" / "createBafflesDict").exists(), "baffle and thick zone must not both be active"
 assert "name qCell;" in ts, "the flow-measuring cellZone is missing"
 
 # the flow probe, third attempt - and the two failed ones must not come back

@@ -138,10 +138,11 @@ def test_midplane_vtk_is_read(tmp_path):
     assert F["p"] == [(1.0,), (2.0,), (3.0,), (4.0,)] and F["U"][3] == (0.0, 0.0, 4.0)
 
 
-def test_baffle_cassette_needs_no_layer_correction(tmp_path):
+def test_thick_zone_cassette_needs_no_layer_correction(tmp_path):
     make(str(tmp_path), [4648, 4648, 2324])
-    (tmp_path / "system" / "createBafflesDict").write_text("// porous baffle\n")
+    cpf = tmp_path / "system" / "caseParams"
+    cpf.write_text(cpf.read_text() + "THICK_Z0    0.28800;\nTHICK_Z1    0.66000;\n")
     before = coeffs(str(tmp_path))
     r = run(str(tmp_path))
-    assert r.returncode == 0 and "porous baffle" in r.stdout
+    assert r.returncode == 0 and "thick porous zone" in r.stdout
     assert coeffs(str(tmp_path)) == before

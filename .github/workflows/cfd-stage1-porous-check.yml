@@ -59,45 +59,17 @@ jobs:
             layers: "0.255:0.285:9.2083e5:303.33 0.285:0.315:4.4367e6:701.17 0.315:0.33:7.5683e7:4485"
           # The fix: the same cassette as ONE porous baffle (zero thickness, exact Ergun jump) on the
           # same coarse 15 mm cells that lost 72 % of its resistance as porous zones.
-          # Run #6: the undamped baffle diverged in ~30 iterations (stiff jump). Same cases with the
-          # jump under-relaxed; the smallest value that is stable AND converged in 3000 iterations
-          # goes into make_sweep (BAFFLE_RELAX).
-          - name: cem_baffle_r2
+          # The fix that ships: the cassette's total resistance (sum t*d, sum t*f) spread over ONE
+          # zone 315 mm / 21 cells thick (as group J: 324 mm / ~21 cells), on the same 15 mm cells that lost 72 % as thin layers.
+          # (The zero-thickness baffle diverged at every relaxation tried, runs #6-#7.)
+          - name: cem_thick
             U: "0.082"
             dx: "0.015"
-            baffle: "1"
-            relax: "0.2"
-            layers: "0.30:0.325:1.105e6:364 0.325:0.35:5.324e6:841.4 0.35:0.375:4.541e7:2691"
-          - name: cem_baffle_r05
-            U: "0.082"
-            dx: "0.015"
-            baffle: "1"
-            relax: "0.05"
-            layers: "0.30:0.325:1.105e6:364 0.325:0.35:5.324e6:841.4 0.35:0.375:4.541e7:2691"
-          - name: cem_baffle_r01
-            U: "0.082"
-            dx: "0.015"
-            baffle: "1"
-            relax: "0.01"
-            layers: "0.30:0.325:1.105e6:364 0.325:0.35:5.324e6:841.4 0.35:0.375:4.541e7:2691"
-          - name: f2_baffle_r05
+            layers: "0.105:0.42:4.11421e+06:309.238"
+          - name: f2_thick
             U: "0.0235"
             dx: "0.015"
-            baffle: "1"
-            relax: "0.05"
-            layers: "0.30:0.325:1.245e8:1.0563e4 0.325:0.35:1.245e8:1.0563e4 0.35:0.375:1.245e8:1.0563e4"
-          - name: f2_baffle_r01
-            U: "0.0235"
-            dx: "0.015"
-            baffle: "1"
-            relax: "0.01"
-            layers: "0.30:0.325:1.245e8:1.0563e4 0.325:0.35:1.245e8:1.0563e4 0.35:0.375:1.245e8:1.0563e4"
-          - name: f2_baffle_r002
-            U: "0.0235"
-            dx: "0.015"
-            baffle: "1"
-            relax: "0.002"
-            layers: "0.30:0.325:1.245e8:1.0563e4 0.325:0.35:1.245e8:1.0563e4 0.35:0.375:1.245e8:1.0563e4"
+            layers: "0.105:0.42:2.96429e+07:2515"
     steps:
       - uses: actions/checkout@v4
       - name: Install OpenFOAM 12

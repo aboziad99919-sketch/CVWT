@@ -52,11 +52,10 @@ def main():
     if len(layers) < 2:
         print("single-layer bed: no correction (kept identical to the collected groups)")
         return 0
-    if os.path.exists("system/createBafflesDict"):
-        # The cassette's resistance is a porous BAFFLE (exact on any mesh); the layer zones carry
-        # none, so there is nothing to correct. Porous zones a few cells thick lost up to 98 % of
-        # their resistance in the porous-check ducts - which is why the baffle replaced them.
-        print("cassette is a porous baffle: no per-layer correction needed")
+    if "THICK_Z0" in p:
+        # The cassette's resistance is one equivalent THICK porous zone (~25 cells), which the
+        # porous-check ducts show is resolved; the designed layers are reference only.
+        print("cassette is an equivalent thick porous zone: no per-layer correction needed")
         return 0
     if "designed" in open(CP).read():
         print("layers already corrected in this case: not applying the factors twice")

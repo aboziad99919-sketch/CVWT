@@ -445,6 +445,34 @@ def create(case):
                   f"        type            DarcyForchheimer;\n"
                   f"        d   ($D_{i} $D_{i} $D_{i});\n        f   ($F_{i} $F_{i} $F_{i});\n"
                   f"        coordinateSystem filterAxes;\n    }}\n}}")
+    thick = bool(stack) and "SEALED" not in grades
+    if thick:
+        # The cassette as ONE EQUIVALENT THICK porous zone. porous-check run #3: a porous zone a few
+        # cells thick loses most of its resistance in OpenFOAM (C3 on 1 / 2 / 3 / 5 cells: -98 / -25 /
+        # -19 / -11 % against Ergun; the cassette meshed as group J meshes it: -72 %), while zones
+        # 18-25 cells thick land within 1-3 %. A zero-thickness porous baffle diverged in every
+        # setting tried (runs #6, #7, relaxation down to 0.002). So the cassette's total resistance,
+        # sum(t*d) and sum(t*f), is spread over 27 mm-rig / 324 mm-full of bore (about 21 cells),
+        # from the cassette floor up to below the exhaust tube inlet: the same pressure drop
+        # for the same flow, resolved. The designed layers stay in caseParams (LZ*, D_i, F_i) for
+        # reference; THICK_* is what runs. SEALED stays as it was: 1e12 survives any loss.
+        zlo = bounds[0]                 # cassette floor: keeps the lower pressure slab above the intake slot
+        zhi = zlo + 0.027 * S           # 324 mm full / ~21 cells: upper slab stays below the tube inlet
+        Deq = sum((bounds[i] - bounds[i - 1]) * float(FILTERS[g]["Darcy_d_1/m2"])
+                  for i, g in enumerate(grades, 1)) / (zhi - zlo)
+        Feq = sum((bounds[i] - bounds[i - 1]) * float(FILTERS[g]["Forchheimer_f_1/m"])
+                  for i, g in enumerate(grades, 1)) / (zhi - zlo)
+        lp.append(f"THICK_Z0    {zlo:.5f};   // equivalent thick porous zone carrying the cassette's resistance\n"
+                  f"THICK_Z1    {zhi:.5f};\n"
+                  f"THICK_D     {Deq:.8g};   // sum(t*d) / zone thickness [1/m2]\n"
+                  f"THICK_F     {Feq:.8g};   // sum(t*f) / zone thickness [1/m]")
+        fz = ["    { name filter1Cells; type cellSet; action new; source cylinderToCell;\n"
+              "      point1 (0 0 $THICK_Z0); point2 (0 0 $THICK_Z1); radius $BORE_R; }\n"
+              "    { name filter1; type cellZoneSet; action new; source setToCellZone; set filter1Cells; }"]
+        pm = ["cassetteEquivalent\n{\n    type            porosityForce;\n    porosityForceCoeffs\n    {\n"
+              "        cellZone        filter1;\n        type            DarcyForchheimer;\n"
+              "        d   ($THICK_D $THICK_D $THICK_D);\n        f   ($THICK_F $THICK_F $THICK_F);\n"
+              "        coordinateSystem filterAxes;\n    }\n}"]
     if stack:
         # Cassette pressure drop as an AREA average over thin slabs just below and above the stack.
         # The centre-line probes are only representative when the bed is resistive enough to make
@@ -452,7 +480,7 @@ def create(case):
         # swirl on the axis below it and 3x the mean velocity on the axis above it, and the two
         # axis points read 0.67 Pa where the measured flow needs ~2 Pa. Cell SETS, not zones: the
         # upper slab overlaps qCell, and a cell may belong to only one zone.
-        z0s, z1s = bounds[0], bounds[-1]
+        z0s, z1s = (zlo, zhi) if thick else (bounds[0], bounds[-1])
         lp.append(f"PB_Z0       {z0s - 0.0035 * S:.5f};   // area-average pressure slab below the cassette\n"
                   f"PB_Z1       {z0s - 0.0010 * S:.5f};\n"
                   f"PA_Z0       {z1s + 0.0010 * S:.5f};   // ... and above it\n"
@@ -461,23 +489,6 @@ def create(case):
                   "      point1 (0 0 $PB_Z0); point2 (0 0 $PB_Z1); radius $BORE_R; }\n"
                   "    { name pAboveCells; type cellSet; action new; source cylinderToCell;\n"
                   "      point1 (0 0 $PA_Z0); point2 (0 0 $PA_Z1); radius $BORE_R; }")
-    if stack and "SEALED" not in grades:
-        # The cassette as ONE porous baffle, not porous zones. porous-check run #3 proved that a
-        # porous zone a few cells thick loses most of its resistance in OpenFOAM: C3 on 1 / 2 / 3 / 5
-        # cells gave -98 / -25 / -19 / -11 % against Ergun, and the cassette meshed exactly as
-        # group J meshes it gave -72 % (group J itself: -69 %). A baffle applies the jump
-        # (D mu U + 1/2 I rho U^2) with D = sum(t*d), I = sum(t*f) on a zero-thickness face set,
-        # exact on any mesh. The layer cellZones are kept (volume for later capture modelling) but
-        # carry no resistance. SEALED stays a porous zone: 1e12 survives any resolution loss.
-        Db = sum((bounds[i] - bounds[i - 1]) * float(FILTERS[g]["Darcy_d_1/m2"]) for i, g in enumerate(grades, 1))
-        Ib = sum((bounds[i] - bounds[i - 1]) * float(FILTERS[g]["Forchheimer_f_1/m"]) for i, g in enumerate(grades, 1))
-        pm = ["// the cassette is a porous baffle (system/createBafflesDict), not porous zones"]
-        lp.append(f"BAFFLE_D    {Db:.8g};   // sum(t*d) over the cassette layers [1/m]\n"
-                  f"BAFFLE_I    {Ib:.8g};   // sum(t*f) [-]\n"
-                  f"BAFFLE_Z    {0.5 * (bounds[0] + bounds[-1]):.5f};   // baffle plane, mid-cassette")
-        fz.append("    { name cassette; type faceZoneSet; action new; source searchableSurfaceToFaceZone;\n"
-                  "      surface searchableDisk; origin (0 0 $BAFFLE_Z); normal (0 0 1); radius $BORE_R; }")
-        (dst / "system" / "createBafflesDict").write_text(BAFFLE_DICT % (Db, Ib, BAFFLE_RELAX))
     if case.get("tsr") is not None:
         # Steady MRF (OpenFOAM 12: constant/MRFProperties; rotating walls MRFnoSlip in 0/U, as in the
         # mixerVessel2DMRF tutorial). The zone is the annulus swept by the fins - fins span r 13.9 to
