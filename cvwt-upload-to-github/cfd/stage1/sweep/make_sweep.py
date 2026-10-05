@@ -244,6 +244,10 @@ QCELL_BLOCK = """    // Flow, measured without any surface at all: the area-aver
 
 # OpenFOAM 12 createBaffles for the cassette baffle - identical to the dict the porous-check duct
 # verifies (tests/foam/porous_duct/make_variant.py), so what is tested is what runs.
+# Under-relaxation of the baffle jump. The cassette jump is stiff (D*nu ~ 20 for CEM, ~140 for F2,
+# kinematic) and diverged undamped; the value is the one the porous-check duct shows stable AND
+# converged - see the cem_baffle_* / f2_baffle_* legs.
+BAFFLE_RELAX = 0.05
 BAFFLE_DICT = """FoamFile { format ascii; class dictionary; object createBafflesDict; }
 internalFacesOnly true;
 fields true;
@@ -268,6 +272,7 @@ baffles
                     D           %.8g;
                     I           %.8g;
                     length      1;
+                    relaxation  %.4g;
                     value       uniform 0;
                 }
             }
@@ -461,7 +466,7 @@ def create(case):
                   f"BAFFLE_Z    {0.5 * (bounds[0] + bounds[-1]):.5f};   // baffle plane, mid-cassette")
         fz.append("    { name cassette; type faceZoneSet; action new; source searchableSurfaceToFaceZone;\n"
                   "      surface searchableDisk; origin (0 0 $BAFFLE_Z); normal (0 0 1); radius $BORE_R; }")
-        (dst / "system" / "createBafflesDict").write_text(BAFFLE_DICT % (Db, Ib))
+        (dst / "system" / "createBafflesDict").write_text(BAFFLE_DICT % (Db, Ib, BAFFLE_RELAX))
     subs["LAYERPARAMS"]   = "\n".join(lp)
     subs["FILTERZONES"]   = "\n".join(fz)
     subs["POROUSMODELS"]  = "\n".join(pm)

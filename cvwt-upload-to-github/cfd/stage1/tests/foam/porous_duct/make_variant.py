@@ -38,6 +38,7 @@ baffles
                     D           %.8g;
                     I           %.8g;
                     length      1;
+                    relaxation  %.4g;
                     value       uniform 0;
                 }
             }
@@ -89,7 +90,12 @@ if os.environ.get("BAFFLE"):
     zones = (f"    {{ name cassette; type faceZoneSet; action new; source searchableSurfaceToFaceZone;\n"
              f"      surface searchablePlate; origin ({xb} -0.001 -0.001); span (0 0.022 0.022); }}")
     models = "// the stack is a porous baffle (system/createBafflesDict), not a porous zone"
-    open(os.path.join(out, "system", "createBafflesDict"), "w").write(BAFFLE_DICT % (D, I))
+    # relaxation of the jump: undamped, the stiff CEM / F2 jumps diverged in ~30 iterations
+    # (porous-check run #6: continuity errors 1e98, then a floating-point exception in GAMG)
+    relax = float(os.environ.get("RELAX") or "0.05")
+    open(os.path.join(out, "system", "createBafflesDict"), "w").write(BAFFLE_DICT % (D, I, relax))
+    cdp = os.path.join(out, "system", "controlDict"); t = open(cdp).read()
+    open(cdp, "w").write(t.replace("endTime   600;", "endTime   3000;"))
 rewrite(os.path.join(out, "system", "topoSetDict"), "actions", f"actions\n(\n{zones}\n);")
 rewrite(os.path.join(out, "constant", "fvModels"), "biocharBed", models)
 # Optional coarse mesh (env DX, metres): a 600 mm duct cut into DX-long cells, so a layer can be
