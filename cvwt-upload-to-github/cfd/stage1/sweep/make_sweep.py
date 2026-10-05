@@ -101,7 +101,7 @@ for grp, bore in (("R3", 17.0), ("R4", 34.0)):
 #    static torque and its SIGN fixes the direction the wind drives it; both directions are run so
 #    one pass settles that, and the zero crossing on the driven side is the freewheel speed.
 #    R4_F2 has a single 18 mm bed (~14 cells), so it is unaffected by the thin-layer porous loss.
-for lam in (0.0, 0.2, 0.4, 0.6, -0.2, -0.4):
+for lam in (0.0, 0.2, 0.4, 0.6, -0.2, -0.4, -0.6, -0.8, -1.0, -1.2):
     add("S2", "F2", 18, 4, 0, "open", core="solid", bore_mm=34.0, slot_r_mm=16.0, tsr=lam,
         why=f"rotating rotor (MRF), tip speed ratio {lam:+.1f}: torque, freewheel speed, flow")
 

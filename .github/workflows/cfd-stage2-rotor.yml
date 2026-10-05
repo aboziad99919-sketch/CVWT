@@ -15,13 +15,16 @@ jobs:
       fail-fast: false
       max-parallel: 6
       matrix:
+        # Run 1 (lambda 0, +-0.2, +-0.4, +0.6): driven clockwise (lambda < 0), torque still driving at
+        # -0.4. Run 2 extends the driven side to find where the torque crosses zero; lambda 0 and -0.4
+        # are repeated so this run alone fixes the direction and overlaps run 1.
         case:
           - S2_F2_t18_U4_az000_open_solid_medium_b34s16_tsrp000
-          - S2_F2_t18_U4_az000_open_solid_medium_b34s16_tsrp020
-          - S2_F2_t18_U4_az000_open_solid_medium_b34s16_tsrp040
-          - S2_F2_t18_U4_az000_open_solid_medium_b34s16_tsrp060
-          - S2_F2_t18_U4_az000_open_solid_medium_b34s16_tsrm020
           - S2_F2_t18_U4_az000_open_solid_medium_b34s16_tsrm040
+          - S2_F2_t18_U4_az000_open_solid_medium_b34s16_tsrm060
+          - S2_F2_t18_U4_az000_open_solid_medium_b34s16_tsrm080
+          - S2_F2_t18_U4_az000_open_solid_medium_b34s16_tsrm100
+          - S2_F2_t18_U4_az000_open_solid_medium_b34s16_tsrm120
     steps:
       - uses: actions/checkout@v4
       - name: Install OpenFOAM 12

@@ -59,6 +59,10 @@ S2_F2_t18_U4_az000_open_solid_medium_b34s16_tsrp040,S2,F2,18,4,0,,,,,open,solid,
 S2_F2_t18_U4_az000_open_solid_medium_b34s16_tsrp060,S2,F2,18,4,0,,,,,open,solid,medium,"rotating rotor (MRF), tip speed ratio +0.6: torque, freewheel speed, flow",,34.0,16.0,1.0,0.6,3500000,7.3
 S2_F2_t18_U4_az000_open_solid_medium_b34s16_tsrm020,S2,F2,18,4,0,,,,,open,solid,medium,"rotating rotor (MRF), tip speed ratio -0.2: torque, freewheel speed, flow",,34.0,16.0,1.0,-0.2,3500000,7.3
 S2_F2_t18_U4_az000_open_solid_medium_b34s16_tsrm040,S2,F2,18,4,0,,,,,open,solid,medium,"rotating rotor (MRF), tip speed ratio -0.4: torque, freewheel speed, flow",,34.0,16.0,1.0,-0.4,3500000,7.3
+S2_F2_t18_U4_az000_open_solid_medium_b34s16_tsrm060,S2,F2,18,4,0,,,,,open,solid,medium,"rotating rotor (MRF), tip speed ratio -0.6: torque, freewheel speed, flow",,34.0,16.0,1.0,-0.6,3500000,7.3
+S2_F2_t18_U4_az000_open_solid_medium_b34s16_tsrm080,S2,F2,18,4,0,,,,,open,solid,medium,"rotating rotor (MRF), tip speed ratio -0.8: torque, freewheel speed, flow",,34.0,16.0,1.0,-0.8,3500000,7.3
+S2_F2_t18_U4_az000_open_solid_medium_b34s16_tsrm100,S2,F2,18,4,0,,,,,open,solid,medium,"rotating rotor (MRF), tip speed ratio -1.0: torque, freewheel speed, flow",,34.0,16.0,1.0,-1.0,3500000,7.3
+S2_F2_t18_U4_az000_open_solid_medium_b34s16_tsrm120,S2,F2,18,4,0,,,,,open,solid,medium,"rotating rotor (MRF), tip speed ratio -1.2: torque, freewheel speed, flow",,34.0,16.0,1.0,-1.2,3500000,7.3
 FS_SEALED_t18_U4_az000_open_solid_medium_b34s16_x12,FS,SEALED,18,4,0,,,,,open,solid,medium,full scale: is the available head really unchanged by size?,,34.0,16.0,12.0,,3500000,7.3
 FS_F1_t18_U4_az000_open_solid_medium_b34s16_x12,FS,F1,18,4,0,,,,,open,solid,medium,full scale sealed core: flow and residence time at 1:1,,34.0,16.0,12.0,,3500000,7.3
 FS_F2_t18_U4_az000_open_solid_medium_b34s16_x12,FS,F2,18,4,0,,,,,open,solid,medium,full scale sealed core: flow and residence time at 1:1,,34.0,16.0,12.0,,3500000,7.3
