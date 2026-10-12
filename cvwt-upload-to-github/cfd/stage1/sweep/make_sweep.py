@@ -19,7 +19,7 @@ def k_omega(U, I=0.05, l=0.01, cmu=0.09):
 cases = []
 def add(group, fid, t_mm, U, az, top, mesh="medium", core="holes", why="", bed_z0=None, intake=None,
         skirt=None, stack=None, tube_mm=None,
-        bore_mm=17.0, slot_r_mm=16.0, scale=1.0, tsr=None):
+        bore_mm=17.0, slot_r_mm=16.0, scale=1.0, tsr=None, barrier=None):
     """core: 'holes' = perforated cylinder (design as drawn); 'solid' = unperforated cylinder (reversed layout).
 
     bed_z0 fixes the bed BOTTOM [m]; the top then follows as bed_z0 + thickness. Left as None the bed
@@ -34,11 +34,12 @@ def add(group, fid, t_mm, U, az, top, mesh="medium", core="holes", why="", bed_z
     if intake: cid += f"_{intake}"
     if skirt:  cid += f"_{skirt}"
     if tube_mm: cid += f"_t{int(round(tube_mm))}"
+    if barrier: cid += f"_bar{barrier}"
     if tsr is not None: cid += f"_tsr{'m' if tsr < 0 else 'p'}{int(round(abs(tsr) * 100)):03d}"
     cases.append(dict(case_id=cid, group=group, filter=fid, thickness_mm=t_mm, U_mps=U, azimuth_deg=az,
                       intake=intake, skirt=skirt, stack=stack, tube_mm=tube_mm,
                       top=top, core=core, mesh=mesh, purpose=why, bed_z0=bed_z0,
-                      bore_mm=bore_mm, slot_r_mm=slot_r_mm, scale=scale, tsr=tsr))
+                      bore_mm=bore_mm, slot_r_mm=slot_r_mm, scale=scale, tsr=tsr, barrier=barrier))
 
 # 1A  map the core driving pressure (the key unknown of the pre-screen) - bed sealed or empty
 for az in (0, 22.5, 45, 67.5):
@@ -156,6 +157,16 @@ for fid, sk, why in (
 # cell-average probe on the same reference case, so group J's flow is checked, not assumed.
 add("J1", "F2", 18, 4, 0, "open", core="solid", bore_mm=34.0, slot_r_mm=16.0,
     why="validation: patch integral vs cell-average probe on the reference case")
+
+# 2J  OPEN STEEL MEDIAN BARRIER (Rev C, 12 Oct 2026). The impact check says the CVWT must stand
+#     behind a vehicle restraint system; a solid concrete one would wall off the deck-level skirt.
+#     An open W-beam on posts (geometry/build_barrier.py), back face 1.0 m outside the skirt, is
+#     added to the J1 CEM r100 case (1851 L/min without it). "par": rails along the wind, i.e. wind
+#     along the road as in group J. "perp": rails across the wind, a crosswind over one barrier.
+for bar, why in (("par", "open steel barrier, wind along the road: cost to the filter flow"),
+                 ("perp", "open steel barrier upwind of the skirt (crosswind): worst case")):
+    add("J2", "CEM", 18, 4, 0, "open", core="solid", bore_mm=34.0, slot_r_mm=16.0, scale=SK,
+        skirt="r100", stack=(25.0, 25.0, 25.0), bed_z0=0.027, barrier=bar, why=why)
 
 # 1I  INTAKE REDESIGN (user, 1 Oct 2026). The stage-1 model drew air through slots cut down through
 #     the base dish, mount plates and median plate, venting at z = -25 mm to "still room air". That
@@ -562,6 +573,24 @@ def create(case):
             "        surfaceFormat   none;\n"
             "        regionType      faceZone;\n        name            bedExit;\n"
             "        operation       sum;\n        fields          (phi);\n    }")
+    if case.get("barrier"):
+        # The barrier is one extra wall surface. Its entries carry no coordinates, so they are added
+        # here and scale with the STL like everything else. Level LVL_1 puts ~3 cells across the
+        # 100 mm rail and ~10 up its 310 mm face (base 240 mm at full size).
+        shutil.copy(GEOM / f"cvwt_barrier_{case['barrier']}.stl", g / "cvwt_barrier.stl")
+        sn = dst / "system" / "snappyHexMeshDict"; t = sn.read_text()
+        for a, b in (('    base     { type triSurfaceMesh; file "cvwt_base_stack.stl"; }',
+                      '    barrier  { type triSurfaceMesh; file "cvwt_barrier.stl"; }      // open steel median barrier (J2)\n'),
+                     ('        { file "cvwt_base_stack.eMesh"; level $LVL_1; }',
+                      '        { file "cvwt_barrier.eMesh"; level $LVL_1; }\n'),
+                     ('        base\n        {',
+                      '        barrier { level ($LVL_1 $LVL_1); patchInfo { type wall; inGroups (barrierGroup cvwtWalls); } }\n')):
+            assert a in t, f"snappyHexMeshDict changed near: {a}"
+            t = t.replace(a, b + a, 1)
+        sn.write_text(t)
+        sf = dst / "system" / "surfaceFeaturesDict"; t = sf.read_text()
+        assert '"cvwt_base_stack.stl");' in t
+        sf.write_text(t.replace('"cvwt_base_stack.stl");', '"cvwt_base_stack.stl" "cvwt_barrier.stl");', 1))
     if abs(S - 1.0) > 1e-9:
         apply_scale(dst, S)
     for p in dst.rglob("*"):
