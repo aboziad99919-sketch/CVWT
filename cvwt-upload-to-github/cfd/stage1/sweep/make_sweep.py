@@ -19,7 +19,7 @@ def k_omega(U, I=0.05, l=0.01, cmu=0.09):
 cases = []
 def add(group, fid, t_mm, U, az, top, mesh="medium", core="holes", why="", bed_z0=None, intake=None,
         skirt=None, stack=None, tube_mm=None,
-        bore_mm=17.0, slot_r_mm=16.0, scale=1.0, tsr=None, barrier=None):
+        bore_mm=17.0, slot_r_mm=16.0, scale=1.0, tsr=None, barrier=None, rotor=None):
     """core: 'holes' = perforated cylinder (design as drawn); 'solid' = unperforated cylinder (reversed layout).
 
     bed_z0 fixes the bed BOTTOM [m]; the top then follows as bed_z0 + thickness. Left as None the bed
@@ -35,11 +35,12 @@ def add(group, fid, t_mm, U, az, top, mesh="medium", core="holes", why="", bed_z
     if skirt:  cid += f"_{skirt}"
     if tube_mm: cid += f"_t{int(round(tube_mm))}"
     if barrier: cid += f"_bar{barrier}"
+    if rotor: cid += f"_rot{rotor}"
     if tsr is not None: cid += f"_tsr{'m' if tsr < 0 else 'p'}{int(round(abs(tsr) * 100)):03d}"
     cases.append(dict(case_id=cid, group=group, filter=fid, thickness_mm=t_mm, U_mps=U, azimuth_deg=az,
                       intake=intake, skirt=skirt, stack=stack, tube_mm=tube_mm,
                       top=top, core=core, mesh=mesh, purpose=why, bed_z0=bed_z0,
-                      bore_mm=bore_mm, slot_r_mm=slot_r_mm, scale=scale, tsr=tsr, barrier=barrier))
+                      bore_mm=bore_mm, slot_r_mm=slot_r_mm, scale=scale, tsr=tsr, barrier=barrier, rotor=rotor))
 
 # 1A  map the core driving pressure (the key unknown of the pre-screen) - bed sealed or empty
 for az in (0, 22.5, 45, 67.5):
@@ -105,6 +106,19 @@ for grp, bore in (("R3", 17.0), ("R4", 34.0)):
 for lam in (0.0, 0.2, 0.4, 0.6, -0.2, -0.4, -0.6, -0.8, -1.0, -1.2):
     add("S2", "F2", 18, 4, 0, "open", core="solid", bore_mm=34.0, slot_r_mm=16.0, tsr=lam,
         why=f"rotating rotor (MRF), tip speed ratio {lam:+.1f}: torque, freewheel speed, flow")
+
+# S3 STAGE 3 - ROTOR DESIGN STUDY (user, 13 Oct 2026: "change the fin twist or any parameter").
+#    Parametric fins (geometry/build_fins.py) on the S2 setup at lambda -0.5, the driven direction
+#    and the optimum of the S2 power curve. One parameter at a time from the CAD-like baseline:
+#    twist 0/90/175/270/360 deg, 2/3/4 fins, camber 0/38/80 deg, end plates. Each geometry runs at
+#    three azimuths a third of a fin period apart, so the mean (power) and the first harmonic of the
+#    blade-pass load (the ripple that sets the core vibration) both come out of one dispatch.
+S3_VARIANTS = {"base": 4, "tw0": 4, "tw90": 4, "tw270": 4, "tw360": 4, "n2": 2, "n3": 3,
+               "cam0": 4, "cam80": 4, "plates": 4}
+for rot, nf in S3_VARIANTS.items():
+    for k in range(3):
+        add("S3", "F2", 18, 4, round(360 / nf * k / 3, 1), "open", core="solid", bore_mm=34.0, slot_r_mm=16.0,
+            tsr=-0.5, rotor=rot, why=f"rotor design {rot}, azimuth {k}/3 of a fin period, lambda -0.5")
 
 # 1FS full scale. Pressure does not scale: head = Cp x 0.5*rho*U^2, and U is 4 m/s at any size, so
 #     the ~6.4 Pa available is the same on a 0.31 m rig and a 3.68 m tower. What scales is the bed -
@@ -411,7 +425,8 @@ def create(case):
         shutil.copy(GEOM / f"cvwt_base_stack{ssuf}.stl", g / "cvwt_base_stack.stl")
     # the core cylinder: perforated (as drawn) or unperforated (reversed layout) - same patch name either way
     shutil.copy(GEOM / ("cvwt_tube.stl" if case["core"] == "holes" else "cvwt_tube_solid.stl"), g / "cvwt_tube.stl")
-    rotate_stl(GEOM / "cvwt_fins.stl", g / "cvwt_fins.stl", case["azimuth_deg"])
+    rotate_stl(GEOM / (f"cvwt_fins_{case['rotor']}.stl" if case.get("rotor") else "cvwt_fins.stl"),
+               g / "cvwt_fins.stl", case["azimuth_deg"])
     # D_COEFF/F_COEFF stay for the single-medium dictionaries and for the case record; a layered
     # cassette ("CEM") has no single pair, so it reports its first grade and the per-layer values
     # below are what the solver actually uses.
