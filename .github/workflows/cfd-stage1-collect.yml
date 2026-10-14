@@ -90,10 +90,20 @@ jobs:
           S=$(find . -name check_stability.py -not -path "./dl/*" | head -1)
           if [ -n "$S" ]; then python3 "$S" runs 500 | tee stability.txt; else echo "check_stability.py not in the repo" | tee stability.txt; fi
 
+      - name: Rotor design study (stage 3), if its runs were collected
+        if: always()
+        run: |
+          if ls runs | grep -q '^S3_'; then
+            python3 "$ROOT/sweep/rotor_design_summary.py" runs 500 | tee design.txt
+          else
+            : > design.txt
+          fi
+
       - name: Put the table in the run summary
         if: always()
         run: |
           {
+            if [ -s design.txt ]; then echo '## Stage 3 rotor design study'; echo '```'; cat design.txt; echo '```'; fi
             echo '## Stage 1 collected results'
             echo '```'
             cat collect.txt
@@ -115,6 +125,8 @@ jobs:
           path: |
             stage1_results.csv
             collect.txt
+            design.txt
+            rotor_design.json
             convergence.txt
             stability.txt
             runs/*/run_summary.json
