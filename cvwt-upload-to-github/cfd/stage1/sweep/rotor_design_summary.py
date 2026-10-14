@@ -37,7 +37,7 @@ def first_harmonic(v):
 
 def main(runs, w=500.0):
     data = {}
-    for c in sorted(glob.glob(os.path.join(runs, "S3_*"))):
+    for c in sorted(glob.glob(os.path.join(runs, "S[34]_*"))):
         m = re.search(r"_az(\d+)_.*_rot(\w+?)_tsr([mp])(\d{3})", os.path.basename(c))
         f = sorted(glob.glob(os.path.join(c, "postProcessing", "rotorForces", "*", "forces.dat")))
         if not m or not f: continue
@@ -46,22 +46,28 @@ def main(runs, w=500.0):
         lam = (-1 if m.group(3) == "m" else 1) * int(m.group(4)) / 100
         U = 4.0; om = lam * U / R
         Fx = wmean(r, 1, w) + wmean(r, 4, w); Mz = wmean(r, 9, w) + wmean(r, 12, w)
-        data.setdefault(m.group(2), []).append((int(m.group(1)) / 10, Fx, Mz, om, U))
+        data.setdefault((m.group(2), lam), []).append((int(m.group(1)) / 10, Fx, Mz, om, U))
     if not data:
-        print("no S3 results under", runs); return 1
+        print("no S3/S4 results under", runs); return 1
     q = 0.5 * RHO * 4.0 ** 2
     res = []
-    for rot, d in data.items():
+    for (rot, lam), d in data.items():
         d.sort()
-        Fm, Fa = first_harmonic([x[1] for x in d]); Mm, Ma = first_harmonic([x[2] for x in d])
+        if len(d) >= 3:
+            Fm, Fa = first_harmonic([x[1] for x in d]); Mm, Ma = first_harmonic([x[2] for x in d])
+        else:   # one azimuth: a power-curve point, no ripple
+            Fm, Mm, Fa, Ma = d[0][1], d[0][2], float("nan"), float("nan")
         Cp = Mm * d[0][3] / (q * 4.0 * A)
-        res.append(dict(rotor=rot, n=len(d), Cp=Cp, Cd=Fm / (q * A), drag_ripple=Fa / abs(Fm), torque_ripple=Ma / abs(Mm) if Mm else float("nan")))
-    base = next((x for x in res if x["rotor"] == "base"), None)
-    print("Stage 3 rotor design study (rig, U 4 m/s, lambda -0.5, frozen-rotor MRF, 3 azimuths per rotor)\n")
-    print(f"  {'rotor':8s} {'azim':>4s} {'Cp':>7s} {'vs base':>8s} {'Cd':>6s} {'drag ripple':>12s} {'torque ripple':>14s}")
-    for x in sorted(res, key=lambda x: -x["Cp"]):
-        rel = f"{(x['Cp'] / base['Cp'] - 1) * 100:+6.1f} %" if base and base["Cp"] else "-"
-        print(f"  {x['rotor']:8s} {x['n']:4d} {x['Cp']:7.4f} {rel:>8s} {x['Cd']:6.3f} {x['drag_ripple'] * 100:10.1f} % {x['torque_ripple'] * 100:12.1f} %")
+        res.append(dict(rotor=rot, lam=lam, n=len(d), Cp=Cp, Cd=Fm / (q * A), drag_ripple=Fa / abs(Fm),
+                        torque_ripple=Ma / abs(Mm) if Mm else float("nan")))
+    # stage 3 parametric baseline at lambda -0.5 (3 azimuths), used when the base rotor is not in this set
+    base = next((x for x in res if x["rotor"] == "base" and x["lam"] == -0.5), None) or {"Cp": 0.0686}
+    print("Rotor design study (rig, U 4 m/s, frozen-rotor MRF; ripple only where 3 azimuths ran)\n")
+    print(f"  {'rotor':8s} {'lambda':>6s} {'azim':>4s} {'Cp':>7s} {'vs base':>8s} {'Cd':>6s} {'drag ripple':>12s} {'torque ripple':>14s}")
+    for x in sorted(res, key=lambda x: (x["rotor"], x["lam"])):
+        rel = f"{(x['Cp'] / base['Cp'] - 1) * 100:+6.1f} %"
+        print(f"  {x['rotor']:8s} {x['lam']:+6.2f} {x['n']:4d} {x['Cp']:7.4f} {rel:>8s} {x['Cd']:6.3f} "
+              f"{x['drag_ripple'] * 100:10.1f} % {x['torque_ripple'] * 100:12.1f} %")
     print("\n  requirement from the vibration study: drag ripple <= 12 % at the 120 rpm cap")
     json.dump(res, open("rotor_design.json", "w"), indent=1)
     return 0
