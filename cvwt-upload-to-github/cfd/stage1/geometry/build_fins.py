@@ -29,6 +29,12 @@ VARIANTS = {
     "cam0":   dict(n=4, twist=175, camber=0,  plates=False),
     "cam80":  dict(n=4, twist=175, camber=80, plates=False),
     "plates": dict(n=4, twist=175, camber=38, plates=True),
+    # stage 4: the S3 winners combined; twist = a whole number of fin periods (360/n) keeps the
+    # torque ripple low with fewer fins (n3 at 175 deg = 1.46 periods gave 24 %)
+    "c1":     dict(n=3, twist=240, camber=80, plates=False),
+    "c2":     dict(n=3, twist=360, camber=80, plates=False),
+    "c3":     dict(n=2, twist=360, camber=80, plates=False),
+    "c4":     dict(n=3, twist=240, camber=38, plates=False),
 }
 
 

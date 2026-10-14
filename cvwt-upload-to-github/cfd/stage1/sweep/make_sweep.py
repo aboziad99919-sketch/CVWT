@@ -120,6 +120,17 @@ for rot, nf in S3_VARIANTS.items():
         add("S3", "F2", 18, 4, round(360 / nf * k / 3, 1), "open", core="solid", bore_mm=34.0, slot_r_mm=16.0,
             tsr=-0.5, rotor=rot, why=f"rotor design {rot}, azimuth {k}/3 of a fin period, lambda -0.5")
 
+# S4 STAGE 4 - the S3 winners combined (3 or 2 fins, camber 80, whole-period twist), each at
+#    lambda -0.3/-0.5/-0.7 for the power curve and at two more azimuths at -0.5 for the ripple.
+S4_VARIANTS = {"c1": 3, "c2": 3, "c3": 2, "c4": 3}
+for rot, nf in S4_VARIANTS.items():
+    for lam in (-0.3, -0.5, -0.7):
+        add("S4", "F2", 18, 4, 0, "open", core="solid", bore_mm=34.0, slot_r_mm=16.0, tsr=lam, rotor=rot,
+            why=f"combined rotor {rot}, lambda {lam}")
+    for k in (1, 2):
+        add("S4", "F2", 18, 4, round(360 / nf * k / 3, 1), "open", core="solid", bore_mm=34.0, slot_r_mm=16.0,
+            tsr=-0.5, rotor=rot, why=f"combined rotor {rot}, azimuth {k}/3 of a fin period, lambda -0.5")
+
 # 1FS full scale. Pressure does not scale: head = Cp x 0.5*rho*U^2, and U is 4 m/s at any size, so
 #     the ~6.4 Pa available is the same on a 0.31 m rig and a 3.68 m tower. What scales is the bed -
 #     thickness x12, area x144 - while the biochar grain stays 2 mm. A hand calculation says flow

@@ -93,7 +93,7 @@ jobs:
       - name: Rotor design study (stage 3), if its runs were collected
         if: always()
         run: |
-          if ls runs | grep -q '^S3_'; then
+          if ls runs | grep -qE '^S[34]_'; then
             python3 "$ROOT/sweep/rotor_design_summary.py" runs 500 | tee design.txt
           else
             : > design.txt
@@ -103,7 +103,7 @@ jobs:
         if: always()
         run: |
           {
-            if [ -s design.txt ]; then echo '## Stage 3 rotor design study'; echo '```'; cat design.txt; echo '```'; fi
+            if [ -s design.txt ]; then echo '## Rotor design study (stages 3-4)'; echo '```'; cat design.txt; echo '```'; fi
             echo '## Stage 1 collected results'
             echo '```'
             cat collect.txt
