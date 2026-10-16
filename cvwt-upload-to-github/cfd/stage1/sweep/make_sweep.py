@@ -19,7 +19,7 @@ def k_omega(U, I=0.05, l=0.01, cmu=0.09):
 cases = []
 def add(group, fid, t_mm, U, az, top, mesh="medium", core="holes", why="", bed_z0=None, intake=None,
         skirt=None, stack=None, tube_mm=None,
-        bore_mm=17.0, slot_r_mm=16.0, scale=1.0, tsr=None, barrier=None, rotor=None):
+        bore_mm=17.0, slot_r_mm=16.0, scale=1.0, tsr=None, barrier=None, rotor=None, exhaust=None):
     """core: 'holes' = perforated cylinder (design as drawn); 'solid' = unperforated cylinder (reversed layout).
 
     bed_z0 fixes the bed BOTTOM [m]; the top then follows as bed_z0 + thickness. Left as None the bed
@@ -35,12 +35,13 @@ def add(group, fid, t_mm, U, az, top, mesh="medium", core="holes", why="", bed_z
     if skirt:  cid += f"_{skirt}"
     if tube_mm: cid += f"_t{int(round(tube_mm))}"
     if barrier: cid += f"_bar{barrier}"
+    if exhaust: cid += f"_exh{exhaust}"
     if rotor: cid += f"_rot{rotor}"
     if tsr is not None: cid += f"_tsr{'m' if tsr < 0 else 'p'}{int(round(abs(tsr) * 100)):03d}"
     cases.append(dict(case_id=cid, group=group, filter=fid, thickness_mm=t_mm, U_mps=U, azimuth_deg=az,
                       intake=intake, skirt=skirt, stack=stack, tube_mm=tube_mm,
                       top=top, core=core, mesh=mesh, purpose=why, bed_z0=bed_z0,
-                      bore_mm=bore_mm, slot_r_mm=slot_r_mm, scale=scale, tsr=tsr, barrier=barrier, rotor=rotor))
+                      bore_mm=bore_mm, slot_r_mm=slot_r_mm, scale=scale, tsr=tsr, barrier=barrier, rotor=rotor, exhaust=exhaust))
 
 # 1A  map the core driving pressure (the key unknown of the pre-screen) - bed sealed or empty
 for az in (0, 22.5, 45, 67.5):
@@ -106,6 +107,16 @@ for grp, bore in (("R3", 17.0), ("R4", 34.0)):
 for lam in (0.0, 0.2, 0.4, 0.6, -0.2, -0.4, -0.6, -0.8, -1.0, -1.2):
     add("S2", "F2", 18, 4, 0, "open", core="solid", bore_mm=34.0, slot_r_mm=16.0, tsr=lam,
         why=f"rotating rotor (MRF), tip speed ratio {lam:+.1f}: torque, freewheel speed, flow")
+
+# 4J  EXHAUST TOP (user, 16 Oct 2026: "make the open cylinder a nozzle - may it increase suction?").
+#     geometry/build_exhaust.py on the J1 CEM r100 reference (1,851 L/min). n1: converging nozzle, half the
+#     exit area (expected to lose flow); v0: core extended 0.18 m above the rotor, open (control);
+#     v1: venturi cap on the extension - wind accelerated across the exit to lower its pressure.
+for ex, why in (("n1", "exhaust nozzle, exit area 0.5x: does a nozzle raise or lower the flow?"),
+                ("v0", "core extended 0.18 m above the rotor, open: control for v1"),
+                ("v1", "venturi cap above the rotor: wind accelerated across the exit")):
+    add("J4", "CEM", 18, 4, 0, "open", core="solid", bore_mm=34.0, slot_r_mm=16.0, scale=12.0,
+        skirt="r100", stack=(25.0, 25.0, 25.0), bed_z0=0.027, exhaust=ex, why=why)
 
 # 3J  ELEVATED INLET (user, 16 Oct 2026): take the traffic air in above the coarse-grit layer.
 #     geometry/build_skirt_elevated.py. e1 = J1 r100 cone with its lower 45 % solid (openings 0.24-0.46 m
@@ -627,6 +638,22 @@ def create(case):
         sf = dst / "system" / "surfaceFeaturesDict"; t = sf.read_text()
         assert '"cvwt_base_stack.stl");' in t
         sf.write_text(t.replace('"cvwt_base_stack.stl");', '"cvwt_base_stack.stl" "cvwt_barrier.stl");', 1))
+    if case.get("exhaust"):
+        # an extra wall surface on top of the core tube (nozzle / extension / venturi cap); entries carry no
+        # coordinates and scale with the STL. Level LVL: >= 6 cells across the 8 mm (rig) venturi throat.
+        shutil.copy(GEOM / f"cvwt_exhaust_{case['exhaust']}.stl", g / "cvwt_exhaust.stl")
+        sn = dst / "system" / "snappyHexMeshDict"; t = sn.read_text()
+        for a, b in (('    base     { type triSurfaceMesh; file "cvwt_base_stack.stl"; }',
+                      '    exhaust  { type triSurfaceMesh; file "cvwt_exhaust.stl"; }      // exhaust top (J4)\n'),
+                     ('        { file "cvwt_base_stack.eMesh"; level $LVL_1; }',
+                      '        { file "cvwt_exhaust.eMesh"; level $LVL; }\n'),
+                     ('        base\n        {',
+                      '        exhaust { level ($LVL $LVL); patchInfo { type wall; inGroups (exhaustGroup cvwtWalls); } }\n')):
+            assert a in t, f"snappyHexMeshDict changed near: {a}"
+            t = t.replace(a, b + a, 1)
+        sn.write_text(t)
+        sf = dst / "system" / "surfaceFeaturesDict"; t = sf.read_text()
+        sf.write_text(t.replace('"cvwt_base_stack.stl"', '"cvwt_base_stack.stl" "cvwt_exhaust.stl"', 1))
     if abs(S - 1.0) > 1e-9:
         apply_scale(dst, S)
     for p in dst.rglob("*"):
