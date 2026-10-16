@@ -107,6 +107,15 @@ for lam in (0.0, 0.2, 0.4, 0.6, -0.2, -0.4, -0.6, -0.8, -1.0, -1.2):
     add("S2", "F2", 18, 4, 0, "open", core="solid", bore_mm=34.0, slot_r_mm=16.0, tsr=lam,
         why=f"rotating rotor (MRF), tip speed ratio {lam:+.1f}: torque, freewheel speed, flow")
 
+# 3J  ELEVATED INLET (user, 16 Oct 2026): take the traffic air in above the coarse-grit layer.
+#     geometry/build_skirt_elevated.py. e1 = J1 r100 cone with its lower 45 % solid (openings 0.24-0.46 m
+#     above the island); e2 = solid shield cone + perforated collar (openings 0.67-0.83 m), air flows down
+#     to the slot through a settling plenum. Reference: J1 CEM r100, 1,851 L/min at 4 m/s.
+for sk, why in (("e1", "elevated inlet e1: openings 0.24-0.46 m above the island"),
+                ("e2", "elevated inlet e2: shield cone + collar, openings 0.67-0.83 m, settling plenum")):
+    add("J3", "CEM", 18, 4, 0, "open", core="solid", bore_mm=34.0, slot_r_mm=16.0, scale=12.0,
+        skirt=sk, stack=(25.0, 25.0, 25.0), bed_z0=0.027, why=why)
+
 # S3 STAGE 3 - ROTOR DESIGN STUDY (user, 13 Oct 2026: "change the fin twist or any parameter").
 #    Parametric fins (geometry/build_fins.py) on the S2 setup at lambda -0.5, the driven direction
 #    and the optimum of the S2 power curve. One parameter at a time from the CAD-like baseline:
@@ -656,7 +665,7 @@ def create(case):
             f"    tubeZone     {{ type searchableCylinder; point1 (0 0 {0.070*S:.4f});"
             f" point2 (0 0 {0.312*S:.4f}); radius {0.021*S:.4f}; }}\n"
             f"    skirtZone    {{ type searchableCylinder; point1 (0 0 {-0.016*S:.4f});"
-            f" point2 (0 0 {0.028*S:.4f}); radius {0.106*S:.4f}; }}", t, count=1)
+            f" point2 (0 0 {(0.064 if skirt.startswith('e') else 0.028)*S:.4f}); radius {0.106*S:.4f}; }}", t, count=1)
         assert n == 1, "coreZone entry not found in snappyHexMeshDict"
         # cassetteZone carries the fine resolution; the rest of the bore does not need it, and at
         # x12 a 0.9 m tall cylinder at level 5 would cost 1.4 M cells on its own.

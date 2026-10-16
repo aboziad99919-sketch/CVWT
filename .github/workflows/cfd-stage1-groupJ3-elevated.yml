@@ -1,0 +1,79 @@
+# Group J3: elevated inlet (user, 16 Oct 2026) - take the traffic air in above the coarse road grit.
+#   e1: the J1 r100 cone with its lower 45 % solid, openings 0.24-0.46 m above the island
+#   e2: solid shield cone + perforated collar, openings 0.67-0.83 m, settling plenum below
+# Reference: J1 CEM r100 (deck-level openings), 1,851 L/min at 4 m/s. Two jobs in parallel. Manual trigger.
+name: cfd-stage1-groupJ3-elevated
+on:
+  workflow_dispatch:
+env:
+  ROOT: cvwt-upload-to-github/cfd/stage1
+jobs:
+  intake:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 400
+    strategy:
+      fail-fast: false
+      max-parallel: 6
+      matrix:
+        case:
+          - J3_CEM_t18_U4_az000_open_solid_medium_b34s16_x12_e1
+          - J3_CEM_t18_U4_az000_open_solid_medium_b34s16_x12_e2
+
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install OpenFOAM 12
+        run: |
+          sudo sh -c "wget -qO - https://dl.openfoam.org/gpg.key > /etc/apt/trusted.gpg.d/openfoam.asc"
+          sudo add-apt-repository -y http://dl.openfoam.org/ubuntu
+          sudo apt-get update -qq && sudo apt-get install -y openfoam12
+      - name: Build the skirt geometry
+        run: |
+          python3 -m pip install --quiet numpy
+          cd geometry
+          python3 build_intake.py sealed_base
+          for r in 100 140; do python3 build_skirt.py "$r" 0.30; done
+          python3 build_skirt_elevated.py
+        working-directory: ${{ env.ROOT }}
+      - name: Guard the geometry and the cassette before spending a mesh
+        run: python3 tests/test_skirt.py
+        working-directory: ${{ env.ROOT }}
+      - name: Mesh and solve ${{ matrix.case }}
+        run: |
+          set +e
+          source /opt/openfoam12/etc/bashrc
+          set -e
+          python3 make_sweep.py --create --only=${{ matrix.case }}
+          cd runs/${{ matrix.case }}
+          foamDictionary system/caseParams -entry LVL   -set 4
+          foamDictionary system/caseParams -entry LVL_1 -set 3
+          foamDictionary system/caseParams -entry LVL_2 -set 2
+          foamDictionary system/caseParams -entry LVL_3 -set 1
+          foamDictionary system/controlDict -entry endTime -set 1500
+          chmod +x Allrun
+          set +e
+          ./Allrun --run 1
+          rc=$?
+          set -e
+          if [ $rc -ne 0 ]; then
+            echo "::error::case failed (rc=$rc)"
+            for l in log.snappyHexMesh log.topoSet log.checkMesh log.foamRun; do
+              [ -f "$l" ] && { echo "---- tail of $l ----"; tail -30 "$l"; }
+            done
+            exit $rc
+          fi
+          grep -m1 -E "^\s*cells:" log.checkMesh || true
+        working-directory: ${{ env.ROOT }}/sweep
+      - name: Summary and acceptance gates
+        if: always()
+        run: python3 summarize_run.py runs/${{ matrix.case }} || true
+        working-directory: ${{ env.ROOT }}/sweep
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: groupJ3-${{ matrix.case }}
+          path: |
+            cvwt-upload-to-github/cfd/stage1/sweep/runs/*/log.*
+            cvwt-upload-to-github/cfd/stage1/sweep/runs/*/run_summary.json
+            cvwt-upload-to-github/cfd/stage1/sweep/runs/*/case_params.json
+            cvwt-upload-to-github/cfd/stage1/sweep/runs/*/postProcessing/**
+          retention-days: 30
