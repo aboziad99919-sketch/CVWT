@@ -112,7 +112,8 @@ for lam in (0.0, 0.2, 0.4, 0.6, -0.2, -0.4, -0.6, -0.8, -1.0, -1.2):
 #     above the island); e2 = solid shield cone + perforated collar (openings 0.67-0.83 m), air flows down
 #     to the slot through a settling plenum. Reference: J1 CEM r100, 1,851 L/min at 4 m/s.
 for sk, why in (("e1", "elevated inlet e1: openings 0.24-0.46 m above the island"),
-                ("e2", "elevated inlet e2: shield cone + collar, openings 0.67-0.83 m, settling plenum")):
+                ("e2", "elevated inlet e2: shield cone + collar, openings 0.67-0.83 m, settling plenum"),
+                ("e3", "ram collar e3: e2 with non-return flaps, only the windward 135 deg open (ideal flaps)")):
     add("J3", "CEM", 18, 4, 0, "open", core="solid", bore_mm=34.0, slot_r_mm=16.0, scale=12.0,
         skirt=sk, stack=(25.0, 25.0, 25.0), bed_z0=0.027, why=why)
 

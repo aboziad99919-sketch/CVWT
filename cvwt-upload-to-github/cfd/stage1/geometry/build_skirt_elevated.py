@@ -94,11 +94,50 @@ def e2(r_col=50.0, z_top=58.0, bands=((41.0, 45.0), (50.0, 54.0))):
     return sh, bands[0][0], bands[-1][1], open_area
 
 
+def revolve_arc(poly, th0, th1, nseg=120):
+    """Sweep a (r, z) quad over [th0, th1] only, closed with flat end caps (a sector of a ring)."""
+    th = np.linspace(th0, th1, nseg + 1); tris = []; m = len(poly)
+    P = lambda r, z, a: (r * np.cos(a), r * np.sin(a), z)
+    for i in range(m):
+        (r0, z0), (r1, z1) = poly[i], poly[(i + 1) % m]
+        for j in range(nseg):
+            a, b = th[j], th[j + 1]
+            tris += [(P(r0, z0, a), P(r1, z1, a), P(r1, z1, b)), (P(r0, z0, a), P(r1, z1, b), P(r0, z0, b))]
+    for a, flip in ((th0, False), (th1, True)):
+        q = [P(r, z, a) for r, z in poly]
+        cap = [(q[0], q[1], q[2]), (q[0], q[2], q[3])]
+        tris += [(c, b_, a_) for a_, b_, c in cap] if flip else cap
+    T_ = np.array(tris)
+    keep = 0.5 * np.linalg.norm(np.cross(T_[:, 1] - T_[:, 0], T_[:, 2] - T_[:, 0]), axis=1) > 1e-12
+    T_ = T_[keep]
+    return T_[:, ::-1, :] if signed_volume(T_) < 0 else T_
+
+
+def e3(r_col=50.0, z_top=58.0, band=(38.0, 56.0), half_window=67.5):
+    """Ram collar: e2's collar with one tall band (z 38-56 mm) that is open ONLY over the +-67.5 deg
+    facing the wind (3 of 8 non-return flap sectors open, the 5 sheltered ones shut). The CFD wind
+    blows along +x, so the windward side is theta = 180 deg. This is the ideal-flap upper bound."""
+    z_c = Z_PLINTH + (R_SKIRT - r_col) / (R_SKIRT - R_WALL) * (Z_CONE_TOP - Z_PLINTH)
+    base, u, n, L = cone_frame(R_WALL, Z_CONE_TOP)
+    s_c = (R_SKIRT - r_col) / (R_SKIRT - R_WALL) * L
+    sh = [plinth(), frustum(base, base + u * s_c, n, "coneShield")]
+    a, b = band
+    sh.append(("collarLow", [(r_col, z_c - 1.0), (r_col, a), (r_col - T, a), (r_col - T, z_c - 1.0)]))
+    sh.append(("collarHigh", [(r_col, b), (r_col, z_top), (r_col - T, z_top), (r_col - T, b)]))
+    w0, w1 = math.radians(180 - half_window), math.radians(180 + half_window)
+    # closed flaps: the band ring everywhere except the windward window
+    sh.append(("collarFlapsShut", [(r_col, a), (r_col, b), (r_col - T, b), (r_col - T, a)], (w1, w0 + 2 * math.pi)))
+    sh.append(("collarCap", [(R_WALL - 0.5, z_top), (r_col, z_top), (r_col, z_top + T), (R_WALL - 0.5, z_top + T)]))
+    open_area = r_col * (w1 - w0) * (b - a)
+    return sh, a, b, open_area
+
+
 def write(name, shells):
     with open(name + ".stl", "w") as fh:
         total = 0
-        for label, poly in shells:
-            T_ = revolve(poly); total += len(T_)
+        for item in shells:
+            label, poly = item[0], item[1]
+            T_ = revolve_arc(poly, *item[2]) if len(item) > 2 else revolve(poly); total += len(T_)
             fh.write(f"solid {label}\n")
             for t in T_ / 1000.0:
                 nv = np.cross(t[1] - t[0], t[2] - t[0]); nv = nv / (np.linalg.norm(nv) or 1)
@@ -111,7 +150,7 @@ def write(name, shells):
 
 if __name__ == "__main__":
     slot = 2 * math.pi * R_WALL * SLOT_H
-    for name, (sh, zlo, zhi, area) in (("e1", e1()), ("e2", e2())):
+    for name, (sh, zlo, zhi, area) in (("e1", e1()), ("e2", e2()), ("e3", e3())):
         ntri = write(f"cvwt_skirt_{name}_p30", housing_shells() + sh)
         print(f"cvwt_skirt_{name}_p30.stl {ntri} tris | openings z {zlo:.1f}-{zhi:.1f} mm rig = "
               f"{(zlo - DECK) * 12 / 1000:.2f}-{(zhi - DECK) * 12 / 1000:.2f} m above the island | "

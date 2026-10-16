@@ -1,7 +1,8 @@
 # Group J3: elevated inlet (user, 16 Oct 2026) - take the traffic air in above the coarse road grit.
 #   e1: the J1 r100 cone with its lower 45 % solid, openings 0.24-0.46 m above the island
 #   e2: solid shield cone + perforated collar, openings 0.67-0.83 m, settling plenum below
-# Reference: J1 CEM r100 (deck-level openings), 1,851 L/min at 4 m/s. Two jobs in parallel. Manual trigger.
+#   e3: ram collar - e2 with passive non-return flaps; only the windward 135 deg admits air (ideal flaps)
+# Reference: J1 CEM r100 (deck-level openings), 1,851 L/min at 4 m/s. Three jobs in parallel. Manual trigger.
 name: cfd-stage1-groupJ3-elevated
 on:
   workflow_dispatch:
@@ -18,6 +19,7 @@ jobs:
         case:
           - J3_CEM_t18_U4_az000_open_solid_medium_b34s16_x12_e1
           - J3_CEM_t18_U4_az000_open_solid_medium_b34s16_x12_e2
+          - J3_CEM_t18_U4_az000_open_solid_medium_b34s16_x12_e3
 
     steps:
       - uses: actions/checkout@v4
