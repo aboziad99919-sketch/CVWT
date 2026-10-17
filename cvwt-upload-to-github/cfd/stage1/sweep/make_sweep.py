@@ -152,6 +152,20 @@ for rot, nf in S4_VARIANTS.items():
         add("S4", "F2", 18, 4, round(360 / nf * k / 3, 1), "open", core="solid", bore_mm=34.0, slot_r_mm=16.0,
             tsr=-0.5, rotor=rot, why=f"combined rotor {rot}, azimuth {k}/3 of a fin period, lambda -0.5")
 
+# S5 STAGE 5 - GOLDEN-RATIO ROTORS (user, 17 Oct 2026: "use the golden ratio to re-design"). The c1 blade
+#    with rotor height/diameter = phi (g1), plus the golden twist 360/phi (g2) and the golden hub ratio
+#    1/phi^2 (g3); same swept area and top as c1 (geometry/build_fins.py). Lambda -0.3/-0.5/-0.7 for the
+#    power curve; g1 and g2 also at two more azimuths at -0.5 for the ripple. c1 is the reference (S4).
+S5_VARIANTS = {"g1": 3, "g2": 3, "g3": 3}
+for rot, nf in S5_VARIANTS.items():
+    for lam in (-0.3, -0.5, -0.7):
+        add("S5", "F2", 18, 4, 0, "open", core="solid", bore_mm=34.0, slot_r_mm=16.0, tsr=lam, rotor=rot,
+            why=f"golden-ratio rotor {rot}, lambda {lam}")
+    if rot != "g3":
+        for k in (1, 2):
+            add("S5", "F2", 18, 4, round(360 / nf * k / 3, 1), "open", core="solid", bore_mm=34.0, slot_r_mm=16.0,
+                tsr=-0.5, rotor=rot, why=f"golden-ratio rotor {rot}, azimuth {k}/3 of a fin period, lambda -0.5")
+
 # 1FS full scale. Pressure does not scale: head = Cp x 0.5*rho*U^2, and U is 4 m/s at any size, so
 #     the ~6.4 Pa available is the same on a 0.31 m rig and a 3.68 m tower. What scales is the bed -
 #     thickness x12, area x144 - while the biochar grain stays 2 mm. A hand calculation says flow
@@ -428,6 +442,14 @@ DP_BLOCK = "\n".join(
     #includeFunc cutPlaneSurface(point=(0 0 0), normal=(0 1 0), fields=(p U pTot), name=midPlane)"""
 
 
+def rotor_geom(rotor):
+    """Root/tip radius and bottom of the fins [m, rig] for a parametric rotor (build_fins.GEOMS)."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("build_fins", GEOM / "build_fins.py")
+    bf = importlib.util.module_from_spec(spec); spec.loader.exec_module(bf)
+    return bf.GEOMS[bf.VARIANTS[rotor].get("geom") if rotor in bf.VARIANTS else None]
+
+
 def create(case):
     dst = HERE / "runs" / case["case_id"]
     if dst.exists():
@@ -551,11 +573,14 @@ def create(case):
         # Steady MRF (OpenFOAM 12: constant/MRFProperties; rotating walls MRFnoSlip in 0/U, as in the
         # mixerVessel2DMRF tutorial). The zone is the annulus swept by the fins - fins span r 13.9 to
         # 56 mm and z 75 to 307 mm - from mid-gap to the stationary core (12.95 mm) out to 60 mm.
-        R_tip = 0.056 * S
+        # The golden-ratio rotors (S5) are wider and start higher, so the zone follows the rotor
+        # (for every other rotor this gives the same 0.070-0.312 m, r <= 60 mm zone as before).
+        rg = rotor_geom(case.get("rotor"))
+        R_tip = rg["ro"] * S
         omega = case["tsr"] * case["U_mps"] / R_tip
         fz.append(f"    {{ name rotorCells; type cellSet; action new; source cylinderAnnulusToCell;\n"
-                  f"      point1 (0 0 {0.070 * S:.5f}); point2 (0 0 {0.312 * S:.5f});"
-                  f" innerRadius {0.01295 * S:.5f}; outerRadius {0.060 * S:.5f}; }}\n"
+                  f"      point1 (0 0 {(rg['z0'] - 0.005) * S:.5f}); point2 (0 0 {0.312 * S:.5f});"
+                  f" innerRadius {0.01295 * S:.5f}; outerRadius {(rg['ro'] + 0.004) * S:.5f}; }}\n"
                   f"    {{ name rotor; type cellZoneSet; action new; source setToCellZone; set rotorCells; }}")
         (dst / "constant" / "MRFProperties").write_text(
             'FoamFile { format ascii; class dictionary; location "constant"; object MRFProperties; }\n'

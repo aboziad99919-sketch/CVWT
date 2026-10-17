@@ -36,7 +36,7 @@ jobs:
             # hard-coded list silently skipped any group added later - groupFS2 ran, produced three
             # good artifacts, and collect reported 42 cases as though nothing had happened. A group
             # that never ran successfully just yields no run id and is skipped.
-            for wf in $(ls .github/workflows/cfd-stage1-group*.yml .github/workflows/cfd-stage3-*.yml .github/workflows/cfd-stage4-*.yml | xargs -n1 basename); do
+            for wf in $(ls .github/workflows/cfd-stage1-group*.yml .github/workflows/cfd-stage3-*.yml .github/workflows/cfd-stage4-*.yml .github/workflows/cfd-stage5-*.yml | xargs -n1 basename); do
               id=$(gh run list -R "$GITHUB_REPOSITORY" -w "$wf" -s success -L 1 --json databaseId -q '.[0].databaseId' 2>/dev/null || true)
               [ -n "$id" ] && RUN_IDS="$RUN_IDS $id"
             done
@@ -93,7 +93,7 @@ jobs:
       - name: Rotor design study (stage 3), if its runs were collected
         if: always()
         run: |
-          if ls runs | grep -qE '^S[34]_'; then
+          if ls runs | grep -qE '^S[345]_'; then
             python3 "$ROOT/sweep/rotor_design_summary.py" runs 500 | tee design.txt
           else
             : > design.txt

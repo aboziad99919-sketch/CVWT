@@ -35,14 +35,28 @@ VARIANTS = {
     "c2":     dict(n=3, twist=360, camber=80, plates=False),
     "c3":     dict(n=2, twist=360, camber=80, plates=False),
     "c4":     dict(n=3, twist=240, camber=38, plates=False),
+    # stage 5 (user, 17 Oct 2026: "use the golden ratio"). Same swept area H x D as c1 and the same top
+    # (the core exit and venturi cap stay put); phi = 1.618:
+    #   g1  c1 blade, rotor height/diameter = phi (c1 is 2.07): Ø1.52 m x 2.46 m full size, bottom raised 0.32 m
+    #   g2  g1 with twist 360/phi = 222.5 deg (the "golden" twist; not a whole number of fin periods)
+    #   g3  g1 with the hub ratio root/tip = 1/phi^2 = 0.382 (c1: 0.248)
+    "g1":     dict(n=3, twist=240,   camber=80, plates=False, geom="golden"),
+    "g2":     dict(n=3, twist=222.5, camber=80, plates=False, geom="golden"),
+    "g3":     dict(n=3, twist=240,   camber=80, plates=False, geom="golden_hub"),
 }
+PHI = (1 + 5 ** 0.5) / 2
+_A = 2 * RO * (Z1 - Z0)                                   # c1 swept area, kept constant
+_RO_G = (_A / PHI) ** 0.5 / 2
+GEOMS = {None: dict(ri=RI, ro=RO, z0=Z0),
+         "golden": dict(ri=RI, ro=_RO_G, z0=Z1 - PHI * 2 * _RO_G),
+         "golden_hub": dict(ri=_RO_G / PHI ** 2, ro=_RO_G, z0=Z1 - PHI * 2 * _RO_G)}
 
 
-def blade(b, n, twist, camber, nr=18, nz=72):
-    r = np.linspace(RI, RO, nr); z = np.linspace(Z0, Z1, nz)
+def blade(b, n, twist, camber, nr=18, nz=72, ri=RI, ro=RO, z0=Z0):
+    r = np.linspace(ri, ro, nr); z = np.linspace(z0, Z1, nz)
     R_, Z_ = np.meshgrid(r, z, indexing="ij")
-    s = (R_ - RI) / (RO - RI)
-    th = TH0 + 2 * math.pi * b / n + math.radians(twist) * (Z_ - Z0) / (Z1 - Z0) + math.radians(camber) * s ** P_EXP
+    s = (R_ - ri) / (ro - ri)
+    th = TH0 + 2 * math.pi * b / n + math.radians(twist) * (Z_ - z0) / (Z1 - z0) + math.radians(camber) * s ** P_EXP
     sides = []
     for sg in (1, -1):
         a = th + sg * (T / 2) / R_
@@ -93,10 +107,10 @@ def write(path, tris):
         f.write("endsolid fins\n")
 
 
-def build(n, twist, camber, plates):
+def build(n, twist, camber, plates, geom=None):
     tris, vol = [], 0.0
     for b in range(n):
-        t, v = orient(blade(b, n, twist, camber)); tris += t; vol += v
+        t, v = orient(blade(b, n, twist, camber, **GEOMS[geom])); tris += t; vol += v
     if plates:
         for z0, z1 in ((Z0 - T, Z0), (Z1, Z1 + T)):
             t, v = orient(plate(z0, z1)); tris += t; vol += v

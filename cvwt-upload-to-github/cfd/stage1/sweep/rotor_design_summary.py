@@ -11,6 +11,9 @@ import glob, json, math, os, re, statistics, sys
 
 RHO, R, SPAN = 1.2, 0.056, 0.2317
 A = 2 * R * SPAN
+# golden-ratio rotors (S5, geometry/build_fins.py): same swept area A, tip radius 63.3 mm
+PHI = (1 + 5 ** 0.5) / 2
+R_ROT = {r: (A / PHI) ** 0.5 / 2 for r in ("g1", "g2", "g3")}
 
 
 def rows(path):
@@ -37,18 +40,18 @@ def first_harmonic(v):
 
 def main(runs, w=500.0):
     data = {}
-    for c in sorted(glob.glob(os.path.join(runs, "S[34]_*"))):
+    for c in sorted(glob.glob(os.path.join(runs, "S[345]_*"))):
         m = re.search(r"_az(\d+)_.*_rot(\w+?)_tsr([mp])(\d{3})", os.path.basename(c))
         f = sorted(glob.glob(os.path.join(c, "postProcessing", "rotorForces", "*", "forces.dat")))
         if not m or not f: continue
         r = rows(f[-1])
         if not r: continue
         lam = (-1 if m.group(3) == "m" else 1) * int(m.group(4)) / 100
-        U = 4.0; om = lam * U / R
+        U = 4.0; om = lam * U / R_ROT.get(m.group(2), R)
         Fx = wmean(r, 1, w) + wmean(r, 4, w); Mz = wmean(r, 9, w) + wmean(r, 12, w)
         data.setdefault((m.group(2), lam), []).append((int(m.group(1)) / 10, Fx, Mz, om, U))
     if not data:
-        print("no S3/S4 results under", runs); return 1
+        print("no S3/S4/S5 results under", runs); return 1
     q = 0.5 * RHO * 4.0 ** 2
     res = []
     for (rot, lam), d in data.items():
